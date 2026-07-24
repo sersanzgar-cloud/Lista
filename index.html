@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terminal Academy · Aprende Linux jugando</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🖥️</text></svg>" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-icon">🖥️</span>
+      <div>
+        <h1>Terminal Academy</h1>
+        <p>Aprende comandos de Linux jugando, nivel a nivel</p>
+      </div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+      <span id="progress-label" class="progress-label">0 / 10 niveles completados</span>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <aside class="sidebar">
+      <h2>Niveles</h2>
+      <ul id="level-list" class="level-list"></ul>
+    </aside>
+
+    <section class="content">
+      <div class="level-panel">
+        <h2 id="level-title">Nivel</h2>
+        <p id="level-story" class="level-story"></p>
+        <p class="objective-label">🎯 Objetivo</p>
+        <p id="level-objective" class="level-objective"></p>
+        <div id="command-chips" class="chips"></div>
+        <div class="level-actions">
+          <button id="hint-btn" class="btn btn-secondary">💡 Pista</button>
+          <button id="reset-btn" class="btn btn-secondary">↺ Reiniciar nivel</button>
+        </div>
+        <p id="hint-text" class="hint-text"></p>
+        <div id="success-banner" class="success-banner">
+          ✅ ¡Nivel completado!
+          <button id="next-level-btn" class="btn btn-primary">Siguiente nivel →</button>
+        </div>
+      </div>
+
+      <div class="terminal">
+        <div class="terminal-titlebar">
+          <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+          <span class="terminal-titlebar-label">jugador@academia</span>
+        </div>
+        <div id="terminal-output" class="terminal-output"></div>
+        <div class="terminal-inputline">
+          <span id="terminal-prompt" class="terminal-prompt"></span>
+          <input id="terminal-input" class="terminal-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" />
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="src/vfs.js"></script>
+  <script src="src/shell.js"></script>
+  <script src="src/levels.js"></script>
+  <script src="src/game.js"></script>
+</body>
+</html>
