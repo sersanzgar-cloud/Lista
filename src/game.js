@@ -53,6 +53,7 @@ window.TA = window.TA || {};
     els.progressLabel = document.getElementById('progress-label');
     els.successBanner = document.getElementById('success-banner');
     els.nextBtn = document.getElementById('next-level-btn');
+    els.mobileToolbar = document.getElementById('mobile-toolbar');
   }
 
   function renderSidebar() {
@@ -252,22 +253,44 @@ window.TA = window.TA || {};
     }
   }
 
+  function submitInput() {
+    const val = els.input.value;
+    els.input.value = '';
+    runCommandLine(val);
+  }
+
+  function historyBack() {
+    if (state.inputHistory.length === 0) return;
+    state.inputPointer = Math.max(0, state.inputPointer - 1);
+    els.input.value = state.inputHistory[state.inputPointer] || '';
+  }
+
+  function historyForward() {
+    if (state.inputHistory.length === 0) return;
+    state.inputPointer = Math.min(state.inputHistory.length, state.inputPointer + 1);
+    els.input.value = state.inputHistory[state.inputPointer] || '';
+  }
+
+  function insertAtCursor(text) {
+    const start = els.input.selectionStart ?? els.input.value.length;
+    const end = els.input.selectionEnd ?? els.input.value.length;
+    const val = els.input.value;
+    els.input.value = val.slice(0, start) + text + val.slice(end);
+    const pos = start + text.length;
+    els.input.setSelectionRange(pos, pos);
+    els.input.focus();
+  }
+
   function bindEvents() {
     els.input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
-        const val = els.input.value;
-        els.input.value = '';
-        runCommandLine(val);
+        submitInput();
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        if (state.inputHistory.length === 0) return;
-        state.inputPointer = Math.max(0, state.inputPointer - 1);
-        els.input.value = state.inputHistory[state.inputPointer] || '';
+        historyBack();
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
-        if (state.inputHistory.length === 0) return;
-        state.inputPointer = Math.min(state.inputHistory.length, state.inputPointer + 1);
-        els.input.value = state.inputHistory[state.inputPointer] || '';
+        historyForward();
       } else if (e.key === 'Tab') {
         e.preventDefault();
         completeInput();
@@ -290,8 +313,36 @@ window.TA = window.TA || {};
       }
     });
 
+    // Evita que los botones de la barra táctil roben el foco (y cierren el teclado) al pulsarlos.
+    els.mobileToolbar.addEventListener('mousedown', (e) => {
+      if (e.target.closest('button')) e.preventDefault();
+    });
+    els.mobileToolbar.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      if (btn.dataset.insert !== undefined) {
+        insertAtCursor(btn.dataset.insert);
+        return;
+      }
+      switch (btn.dataset.action) {
+        case 'tab': completeInput(); break;
+        case 'up': historyBack(); break;
+        case 'down': historyForward(); break;
+        case 'enter': submitInput(); break;
+        case 'backspace': {
+          const start = els.input.selectionStart ?? els.input.value.length;
+          if (start > 0) {
+            els.input.value = els.input.value.slice(0, start - 1) + els.input.value.slice(start);
+            els.input.setSelectionRange(start - 1, start - 1);
+          }
+          els.input.focus();
+          break;
+        }
+      }
+    });
+
     document.addEventListener('click', (e) => {
-      if (e.target.closest('.terminal')) els.input.focus();
+      if (e.target.closest('.terminal') && !e.target.closest('#mobile-toolbar')) els.input.focus();
     });
   }
 

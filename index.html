@@ -2,9 +2,18 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
   <title>Terminal Academy · Aprende Linux jugando</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🖥️</text></svg>" />
+  <meta name="description" content="Practica comandos de Linux por niveles en una terminal simulada. Instálala como app en Android." />
+  <meta name="theme-color" content="#0d1117" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Terminal Academy" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png" />
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -52,9 +61,25 @@
           <span class="terminal-titlebar-label">jugador@academia</span>
         </div>
         <div id="terminal-output" class="terminal-output"></div>
+        <div id="mobile-toolbar" class="mobile-toolbar">
+          <button type="button" data-insert="/">/</button>
+          <button type="button" data-insert="-">-</button>
+          <button type="button" data-insert=".">.</button>
+          <button type="button" data-insert="~">~</button>
+          <button type="button" data-insert="*">*</button>
+          <button type="button" data-insert="&quot;">&quot;</button>
+          <button type="button" data-insert="|">|</button>
+          <button type="button" data-insert=">">&gt;</button>
+          <button type="button" data-insert=">>">&gt;&gt;</button>
+          <button type="button" class="key-action" data-action="tab">Tab⇥</button>
+          <button type="button" class="key-action" data-action="up">↑</button>
+          <button type="button" class="key-action" data-action="down">↓</button>
+          <button type="button" class="key-action" data-action="backspace">⌫</button>
+          <button type="button" class="key-action" data-action="enter">Enter⏎</button>
+        </div>
         <div class="terminal-inputline">
           <span id="terminal-prompt" class="terminal-prompt"></span>
-          <input id="terminal-input" class="terminal-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" />
+          <input id="terminal-input" class="terminal-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send" />
         </div>
       </div>
     </section>
@@ -64,5 +89,12 @@
   <script src="src/shell.js"></script>
   <script src="src/levels.js"></script>
   <script src="src/game.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js').catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>
