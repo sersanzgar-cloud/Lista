@@ -96,6 +96,11 @@ window.TA = window.TA || {};
     text.split('\n').forEach((l) => printLine(l, cls));
   }
 
+  function printExplain(text) {
+    if (!text) return;
+    printLine(`💡 ${text}`, 'term-explain');
+  }
+
   function loadLevel(i) {
     const level = LEVELS[i];
     state.levelIndex = i;
@@ -127,7 +132,7 @@ window.TA = window.TA || {};
     els.output.innerHTML = '';
     printLine(`--- ${level.title} ---`, 'term-meta');
     printLine(level.story, 'term-meta');
-    printLine('Escribe "help" para ver los comandos disponibles.', 'term-meta');
+    printLine('Escribe "help" para ver los comandos disponibles. Tab autocompleta, Ctrl+L limpia la pantalla.', 'term-meta');
     els.prompt.textContent = promptText();
     els.input.value = '';
     els.input.focus();
@@ -183,6 +188,7 @@ window.TA = window.TA || {};
 
     if (!result.ok) {
       printBlock(result.output, 'term-error');
+      printExplain(result.explain);
     } else {
       printBlock(result.output, 'term-output');
     }
@@ -209,6 +215,43 @@ window.TA = window.TA || {};
     state.hintIndex++;
   }
 
+  function completeInput() {
+    const raw = els.input.value;
+    const endsWithSpace = raw.length === 0 || /\s$/.test(raw);
+    const tokens = TA.Shell.tokenize(raw);
+    const isCommandSlot = tokens.length === 0 || (tokens.length === 1 && !endsWithSpace);
+
+    const m = raw.match(/(\S*)$/);
+    const currentToken = endsWithSpace ? '' : (m ? m[1] : '');
+    const tokenStart = raw.length - currentToken.length;
+
+    let candidates = [];
+    if (isCommandSlot) {
+      candidates = Object.keys(TA.Shell.COMMANDS).filter((c) => c.startsWith(currentToken)).sort();
+    } else {
+      const slashIdx = currentToken.lastIndexOf('/');
+      const dirPart = slashIdx === -1 ? '' : currentToken.slice(0, slashIdx + 1);
+      const filePrefix = slashIdx === -1 ? currentToken : currentToken.slice(slashIdx + 1);
+      const dirPath = state.vfs.normalize(dirPart || '.', state.cwd);
+      const dirNode = state.vfs.getNode(dirPath);
+      if (dirNode && dirNode.type === 'dir') {
+        candidates = Object.keys(dirNode.children)
+          .filter((n) => n.startsWith(filePrefix))
+          .sort()
+          .map((n) => dirPart + n + (dirNode.children[n].type === 'dir' ? '/' : ''));
+      }
+    }
+
+    if (candidates.length === 0) return;
+    if (candidates.length === 1) {
+      const completion = candidates[0];
+      els.input.value = raw.slice(0, tokenStart) + completion + (completion.endsWith('/') ? '' : ' ');
+    } else {
+      printLine(`${promptText()} ${raw}`, 'term-input-echo');
+      printLine(candidates.join('   '), 'term-meta');
+    }
+  }
+
   function bindEvents() {
     els.input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -225,6 +268,12 @@ window.TA = window.TA || {};
         if (state.inputHistory.length === 0) return;
         state.inputPointer = Math.min(state.inputHistory.length, state.inputPointer + 1);
         els.input.value = state.inputHistory[state.inputPointer] || '';
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        completeInput();
+      } else if (e.key === 'l' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleClear();
       }
     });
 

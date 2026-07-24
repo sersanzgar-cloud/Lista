@@ -195,6 +195,14 @@ html, body {
 .term-input-echo::before { content: ''; }
 .term-output { color: #c9d1d9; }
 .term-error { color: var(--error); }
+.term-explain {
+  color: var(--amber);
+  background: rgba(210, 153, 34, .08);
+  border-left: 2px solid var(--amber);
+  padding: 4px 8px;
+  margin: 2px 0 6px;
+  border-radius: 0 4px 4px 0;
+}
 
 .terminal-inputline {
   display: flex;
