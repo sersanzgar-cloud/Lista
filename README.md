@@ -6,13 +6,19 @@ de archivos virtual, permisos reales (lectura/escritura/ejecución, propietarios
 `sudo`), procesos, variables de entorno y red. Cada nivel plantea un objetivo y se
 completa automáticamente al ejecutar los comandos correctos.
 
-24 niveles en dos bloques:
+32 niveles en tres bloques:
 - **Niveles 1-10 (fundamentos):** moverte por directorios, crear/leer archivos, copiar,
   `grep`/`find`, `chmod`, tuberías y redirección.
 - **Niveles 11-24 (profesional):** procesos (`ps`, `top`, `kill`, `jobs`, `nohup`),
   permisos y usuarios avanzados (`chown`, `sudo`, `umask`), procesamiento de texto y
   scripting (`cut`, `sed`, `awk`, variables de entorno, ejecutar scripts), y red/sistema
   (`ping`, `curl`, `ss`, `df`, `du`, `free`, `tar`).
+- **Niveles 25-32 (avanzado):** bash real con bucles (`for..in..do..done`) y
+  condicionales (`if [ ... ]; then..else..fi`), argumentos posicionales (`$1`, `$#`) y
+  código de salida (`$?`), gestión de paquetes (`apt`/`dnf`), servicios (`systemctl`),
+  usuarios y grupos (`useradd`, `groupadd`, `usermod`, `passwd`), y control de
+  versiones con `git` (`init`/`add`/`commit`/`status`/`log`) sobre el propio sistema
+  de archivos virtual.
 
 No requiere instalación ni dependencias: es HTML/CSS/JS sin build.
 
@@ -33,9 +39,11 @@ El progreso se guarda en el `localStorage` del navegador.
 - `src/vfs.js` — sistema de archivos virtual (directorios, archivos, permisos,
   propietario/grupo, `umask`).
 - `src/shell.js` — intérprete de comandos (navegación y archivos, texto y scripting,
-  procesos, red/sistema), con soporte de tuberías (`|`), redirección (`>`, `>>`),
-  variables de entorno, `sudo` y segundo plano (`&`, `nohup`).
-- `src/levels.js` — definición de los 24 niveles (historia, objetivo, pistas y
+  procesos, red/sistema, paquetes/servicios/usuarios/git), con soporte de tuberías
+  (`|`), redirección (`>`, `>>`), variables de entorno (comillas simples vs dobles,
+  parámetros posicionales), `sudo`, segundo plano (`&`, `nohup`), y un intérprete real
+  de bloques `for`/`if` para scripts.
+- `src/levels.js` — definición de los 32 niveles (historia, objetivo, pistas y
   validación).
 - `src/game.js` — controlador de la interfaz: terminal, progreso, pistas, barra táctil.
 - `manifest.json` / `service-worker.js` / `icons/` — PWA instalable en Android.

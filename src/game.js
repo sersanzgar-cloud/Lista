@@ -22,6 +22,10 @@ window.TA = window.TA || {};
     jobs: [],
     network: { routes: {}, hosts: {}, ports: [] },
     umask: '022',
+    packages: { installed: [], available: [] },
+    services: [],
+    users: [],
+    groups: [],
   };
 
   function loadProgress() {
@@ -123,6 +127,10 @@ window.TA = window.TA || {};
     state.jobs = [];
     state.network = level.createNetwork ? level.createNetwork() : { routes: {}, hosts: {}, ports: [] };
     state.umask = level.initialUmask || '022';
+    state.packages = level.createPackages ? level.createPackages() : { installed: [], available: [] };
+    state.services = level.createServices ? level.createServices() : [];
+    state.users = level.createUsers ? level.createUsers() : [];
+    state.groups = level.createGroups ? level.createGroups() : [];
 
     els.title.textContent = level.title;
     els.story.textContent = level.story;
@@ -165,6 +173,10 @@ window.TA = window.TA || {};
       network: state.network,
       getUmask: () => state.umask,
       setUmask: (val) => { state.umask = val; },
+      packages: state.packages,
+      services: state.services,
+      users: state.users,
+      groups: state.groups,
     };
   }
 
@@ -227,6 +239,10 @@ window.TA = window.TA || {};
         jobs: state.jobs,
         network: state.network,
         umask: state.umask,
+        packages: state.packages,
+        services: state.services,
+        users: state.users,
+        groups: state.groups,
       });
       if (passed) markComplete();
     }

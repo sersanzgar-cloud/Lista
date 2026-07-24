@@ -11,6 +11,8 @@ window.TA = window.TA || {};
     return { output: '', error, explain: explain || null };
   }
 
+  // Cada token es { text, quote } donde quote es 'single' | 'double' | null (sin comillas).
+  // Las comillas simples, como en bash real, impiden la expansión de variables ($VAR).
   function tokenize(line) {
     const tokens = [];
     let i = 0;
@@ -19,24 +21,24 @@ window.TA = window.TA || {};
       const c = line[i];
       if (c === ' ' || c === '\t') { i++; continue; }
       if (c === '"' || c === "'") {
-        const quote = c;
+        const quoteChar = c;
         let j = i + 1;
         let buf = '';
-        while (j < n && line[j] !== quote) { buf += line[j]; j++; }
-        tokens.push(buf);
+        while (j < n && line[j] !== quoteChar) { buf += line[j]; j++; }
+        tokens.push({ text: buf, quote: quoteChar === "'" ? 'single' : 'double' });
         i = j + 1;
         continue;
       }
-      if (c === '|') { tokens.push('|'); i++; continue; }
+      if (c === '|') { tokens.push({ text: '|', quote: null }); i++; continue; }
       if (c === '>') {
-        if (line[i + 1] === '>') { tokens.push('>>'); i += 2; }
-        else { tokens.push('>'); i++; }
+        if (line[i + 1] === '>') { tokens.push({ text: '>>', quote: null }); i += 2; }
+        else { tokens.push({ text: '>', quote: null }); i++; }
         continue;
       }
       let j = i;
       let buf = '';
       while (j < n && !' \t|>"\''.includes(line[j])) { buf += line[j]; j++; }
-      tokens.push(buf);
+      tokens.push({ text: buf, quote: null });
       i = j;
     }
     return tokens;
@@ -90,15 +92,21 @@ window.TA = window.TA || {};
 
   // --- Variables de entorno ---
 
-  function expandVars(token, ctx) {
-    return token.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (m, braced, bare) => {
-      const name = braced || bare;
+  function expandVars(text, ctx) {
+    return text.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)|\$([0-9#@?])/g, (m, braced, bare, special) => {
+      const name = braced || bare || special;
       if (name === 'HOME') return '/home/jugador';
       if (name === 'USER') return ctx.currentUser;
       if (name === 'PWD') return ctx.vfs.pathToStr(ctx.getCwd());
       if (Object.prototype.hasOwnProperty.call(ctx.env, name)) return ctx.env[name];
       return '';
     });
+  }
+
+  // Resuelve un token tokenizado a su valor final de cadena: expande $VAR salvo si
+  // estaba entre comillas simples, igual que en bash real.
+  function resolveToken(tok, ctx) {
+    return tok.quote === 'single' ? tok.text : expandVars(tok.text, ctx);
   }
 
   // --- Procesos / trabajos en segundo plano ---
@@ -124,7 +132,99 @@ window.TA = window.TA || {};
 
   // --- Ejecución de scripts ---
 
-  function runScriptFile(scriptRaw, ctx, requireExec) {
+  // --- Bloques de script: for..in..do..done, if..then..else..fi ---
+
+  function parseScriptBlock(lines, start, stopKeywords) {
+    const statements = [];
+    let i = start;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (stopKeywords && stopKeywords.includes(line)) {
+        return { statements, nextIndex: i, stoppedAt: line };
+      }
+      const forMatch = line.match(/^for\s+(\w+)\s+in\s+(.+?);\s*do$/);
+      if (forMatch) {
+        const inner = parseScriptBlock(lines, i + 1, ['done']);
+        statements.push({ type: 'for', varName: forMatch[1], itemsRaw: forMatch[2], body: inner.statements });
+        i = inner.nextIndex + 1;
+        continue;
+      }
+      const ifMatch = line.match(/^if\s+(.+?);\s*then$/);
+      if (ifMatch) {
+        const thenPart = parseScriptBlock(lines, i + 1, ['fi', 'else']);
+        let elseBody = [];
+        let nextIndex = thenPart.nextIndex;
+        if (thenPart.stoppedAt === 'else') {
+          const elsePart = parseScriptBlock(lines, thenPart.nextIndex + 1, ['fi']);
+          elseBody = elsePart.statements;
+          nextIndex = elsePart.nextIndex;
+        }
+        statements.push({ type: 'if', condRaw: ifMatch[1], thenBody: thenPart.statements, elseBody });
+        i = nextIndex + 1;
+        continue;
+      }
+      statements.push({ type: 'cmd', line });
+      i++;
+    }
+    return { statements, nextIndex: i, stoppedAt: null };
+  }
+
+  function evalCondition(raw, ctx) {
+    const expanded = expandVars(raw, ctx).replace(/"/g, '');
+    const m = expanded.match(/^\[\s*(.+?)\s*\]$/);
+    if (!m) return false;
+    const parts = m[1].split(/\s+/).filter(Boolean);
+    if (parts.length === 2) {
+      const [op, val] = parts;
+      if (op === '-f') { const n = ctx.vfs.getNode(ctx.vfs.normalize(val, ctx.getCwd())); return !!n && n.type === 'file'; }
+      if (op === '-d') { const n = ctx.vfs.getNode(ctx.vfs.normalize(val, ctx.getCwd())); return !!n && n.type === 'dir'; }
+      if (op === '-e') { return !!ctx.vfs.getNode(ctx.vfs.normalize(val, ctx.getCwd())); }
+      if (op === '-z') return val === '';
+      if (op === '-n') return val !== '';
+    }
+    if (parts.length === 3) {
+      const [a, op, b] = parts;
+      switch (op) {
+        case '=': return a === b;
+        case '!=': return a !== b;
+        case '-eq': return Number(a) === Number(b);
+        case '-ne': return Number(a) !== Number(b);
+        case '-gt': return Number(a) > Number(b);
+        case '-lt': return Number(a) < Number(b);
+        case '-ge': return Number(a) >= Number(b);
+        case '-le': return Number(a) <= Number(b);
+        default: return false;
+      }
+    }
+    return false;
+  }
+
+  function execScriptStatements(statements, ctx) {
+    const out = [];
+    for (const stmt of statements) {
+      if (stmt.type === 'cmd') {
+        const r = runLine(stmt.line, ctx);
+        if (r.output) out.push(r.output);
+        if (!r.ok) return { ok: false, output: out.join('\n'), failedLine: stmt.line, explain: r.explain };
+      } else if (stmt.type === 'for') {
+        const items = expandVars(stmt.itemsRaw, ctx).replace(/"/g, '').split(/\s+/).filter(Boolean);
+        for (const item of items) {
+          ctx.env[stmt.varName] = item;
+          const r = execScriptStatements(stmt.body, ctx);
+          if (r.output) out.push(r.output);
+          if (!r.ok) return { ...r, output: out.join('\n') };
+        }
+      } else if (stmt.type === 'if') {
+        const branch = evalCondition(stmt.condRaw, ctx) ? stmt.thenBody : stmt.elseBody;
+        const r = execScriptStatements(branch, ctx);
+        if (r.output) out.push(r.output);
+        if (!r.ok) return { ...r, output: out.join('\n') };
+      }
+    }
+    return { ok: true, output: out.join('\n') };
+  }
+
+  function runScriptFile(scriptRaw, scriptArgs, ctx, requireExec) {
     const p = ctx.vfs.normalize(scriptRaw, ctx.getCwd());
     const node = ctx.vfs.getNode(p);
     if (!node) {
@@ -146,15 +246,27 @@ window.TA = window.TA || {};
       if (denied) return denied;
     }
     const lines = node.content.split('\n').map((l) => l.trim()).filter((l) => l.length > 0 && !l.startsWith('#'));
-    const out = [];
-    for (const scriptLine of lines) {
-      const r = runLine(scriptLine, ctx);
-      if (r.output) out.push(r.output);
-      if (!r.ok) {
-        return fail(r.output, `El script falló en la línea "${scriptLine}". ${r.explain || ''}`.trim());
-      }
+
+    const prevPositional = {};
+    const positionalKeys = ['0', '#', '@', ...scriptArgs.map((_, i) => String(i + 1))];
+    for (const k of positionalKeys) prevPositional[k] = ctx.env[k];
+    ctx.env['0'] = scriptRaw;
+    scriptArgs.forEach((a, i) => { ctx.env[String(i + 1)] = a; });
+    ctx.env['#'] = String(scriptArgs.length);
+    ctx.env['@'] = scriptArgs.join(' ');
+
+    const { statements } = parseScriptBlock(lines, 0, null);
+    const result = execScriptStatements(statements, ctx);
+
+    for (const k of positionalKeys) {
+      if (prevPositional[k] === undefined) delete ctx.env[k];
+      else ctx.env[k] = prevPositional[k];
     }
-    return ok(out.join('\n'));
+
+    if (!result.ok) {
+      return fail(result.output, `El script falló en la línea "${result.failedLine}". ${result.explain || ''}`.trim());
+    }
+    return ok(result.output);
   }
 
   function readFileArg(ctx, fileRaw, cmdName) {
@@ -169,6 +281,16 @@ window.TA = window.TA || {};
     const denied = checkPerm(node, 'r', ctx, cmdName, fileRaw);
     if (denied) return { error: denied };
     return { node };
+  }
+
+  // Busca el repositorio git más cercano subiendo desde el directorio actual.
+  function findGitRepo(ctx) {
+    const cwd = ctx.getCwd();
+    for (let i = cwd.length; i >= 0; i--) {
+      const node = ctx.vfs.getNode(cwd.slice(0, i));
+      if (node && node.gitRepo) return { node, path: cwd.slice(0, i) };
+    }
+    return null;
   }
 
   // --- Comandos ---
@@ -777,7 +899,7 @@ window.TA = window.TA || {};
 
     bash(args, stdin, ctx) {
       if (!args[0]) return fail('bash: falta el script', 'Indica el archivo de script a ejecutar, por ejemplo: bash instalar.sh');
-      return runScriptFile(args[0], ctx, false);
+      return runScriptFile(args[0], args.slice(1), ctx, false);
     },
 
     ps(args, stdin, ctx) {
@@ -979,6 +1101,179 @@ window.TA = window.TA || {};
       return fail('tar: debes indicar -c (crear) o -x (extraer)', 'Usa tar -czf archivo.tar.gz carpeta/ para comprimir, o tar -xzf archivo.tar.gz para extraer.');
     },
 
+    apt(args, stdin, ctx) {
+      const sub = args[0];
+      if (sub === 'update') return ok('Listas de paquetes actualizadas.');
+      if (sub === 'search' || sub === 'list') {
+        const term = args[1] || '';
+        const matches = ctx.packages.available.filter((p) => !term || p.name.includes(term));
+        if (matches.length === 0) return ok('No se han encontrado paquetes.');
+        return ok(matches.map((p) => `${p.name}/estable ${p.version} — ${p.description}${ctx.packages.installed.includes(p.name) ? ' [instalado]' : ''}`).join('\n'));
+      }
+      if (sub === 'install') {
+        const name = args[1];
+        if (!name) return fail('apt: falta el paquete a instalar', 'Indica qué paquete instalar: sudo apt install <paquete>');
+        if (!ctx.sudo) {
+          return fail(
+            'E: No se pudieron bloquear los directorios de administración (¿eres root?)',
+            `Instalar paquetes requiere privilegios de administrador: sudo apt install ${name}`
+          );
+        }
+        const pkg = ctx.packages.available.find((p) => p.name === name);
+        if (!pkg) {
+          return fail(`E: No se ha encontrado el paquete ${name}`, `No existe ningún paquete llamado "${name}" en el repositorio simulado. Prueba "apt search" para ver los disponibles.`);
+        }
+        if (!ctx.packages.installed.includes(name)) ctx.packages.installed.push(name);
+        return ok(`Configurando ${name} (${pkg.version})...\n${name} instalado correctamente.`);
+      }
+      if (sub === 'remove') {
+        const name = args[1];
+        if (!name) return fail('apt: falta el paquete a eliminar', 'Indica qué paquete eliminar: sudo apt remove <paquete>');
+        if (!ctx.sudo) {
+          return fail(
+            'E: No se pudieron bloquear los directorios de administración (¿eres root?)',
+            `Eliminar paquetes requiere privilegios de administrador: sudo apt remove ${name}`
+          );
+        }
+        ctx.packages.installed = ctx.packages.installed.filter((n) => n !== name);
+        return ok(`Se ha eliminado ${name}.`);
+      }
+      return fail(`apt: orden '${sub}' no reconocida`, 'Este simulador entiende: apt update, apt search/list, apt install <paquete>, apt remove <paquete>.');
+    },
+
+    dnf(args, stdin, ctx) {
+      return COMMANDS.apt(args, stdin, ctx);
+    },
+
+    systemctl(args, stdin, ctx) {
+      const sub = args[0];
+      const svcName = args[1];
+      const svc = ctx.services.find((s) => s.name === svcName);
+      if (sub === 'status') {
+        if (!svc) {
+          return fail(`Unit ${svcName}.service could not be found.`, `No existe ningún servicio llamado "${svcName}" en este sistema simulado.`);
+        }
+        return ok(`● ${svc.name}.service\n   Activo: ${svc.status === 'active' ? 'active (running)' : 'inactive (dead)'}\n   Habilitado: ${svc.enabled ? 'enabled' : 'disabled'}`);
+      }
+      if (['start', 'stop', 'restart', 'enable', 'disable'].includes(sub)) {
+        if (!svc) {
+          return fail(`Failed to ${sub} ${svcName}.service: Unit not found.`, `No existe ningún servicio llamado "${svcName}" en este sistema simulado.`);
+        }
+        if (!ctx.sudo) {
+          return fail(
+            `Failed to ${sub} ${svcName}.service: Access denied`,
+            `Gestionar servicios del sistema requiere privilegios de administrador: sudo systemctl ${sub} ${svcName}`
+          );
+        }
+        if (sub === 'start' || sub === 'restart') svc.status = 'active';
+        if (sub === 'stop') svc.status = 'inactive';
+        if (sub === 'enable') svc.enabled = true;
+        if (sub === 'disable') svc.enabled = false;
+        return ok('');
+      }
+      return fail(`systemctl: orden '${sub}' no reconocida`, 'Este simulador entiende: systemctl status/start/stop/restart/enable/disable <servicio>.');
+    },
+
+    useradd(args, stdin, ctx) {
+      const name = args.find((a) => !a.startsWith('-'));
+      if (!name) return fail('useradd: falta el nombre de usuario', 'Indica el nombre: sudo useradd <usuario>');
+      if (!ctx.sudo) return fail('useradd: Permission denied.', `Crear usuarios requiere privilegios de administrador: sudo useradd ${name}`);
+      if (ctx.users.find((u) => u.username === name)) {
+        return fail(`useradd: el usuario '${name}' ya existe`, 'Ese usuario ya está creado. Comprueba con "groups" o revisando el enunciado del nivel.');
+      }
+      ctx.users.push({ username: name, groups: [name], hasPassword: false });
+      return ok('');
+    },
+
+    groupadd(args, stdin, ctx) {
+      const name = args[0];
+      if (!name) return fail('groupadd: falta el nombre del grupo', 'Indica el nombre: sudo groupadd <grupo>');
+      if (!ctx.sudo) return fail('groupadd: Permission denied.', `Crear grupos requiere privilegios de administrador: sudo groupadd ${name}`);
+      if (!ctx.groups.includes(name)) ctx.groups.push(name);
+      return ok('');
+    },
+
+    usermod(args, stdin, ctx) {
+      const aIdx = args.indexOf('-aG');
+      const group = aIdx !== -1 ? args[aIdx + 1] : null;
+      const username = args[args.length - 1];
+      if (!group || !username || username === group) {
+        return fail('usermod: uso: usermod -aG <grupo> <usuario>', 'Añade un usuario a un grupo con: sudo usermod -aG <grupo> <usuario>');
+      }
+      if (!ctx.sudo) return fail('usermod: Permission denied.', `Modificar usuarios requiere privilegios de administrador: sudo usermod -aG ${group} ${username}`);
+      const user = ctx.users.find((u) => u.username === username);
+      if (!user) return fail(`usermod: el usuario '${username}' no existe`, 'Primero debes crear el usuario con useradd, o comprueba el nombre.');
+      if (!ctx.groups.includes(group)) return fail(`usermod: el grupo '${group}' no existe`, 'Primero crea el grupo con groupadd, o comprueba el nombre.');
+      if (!user.groups.includes(group)) user.groups.push(group);
+      return ok('');
+    },
+
+    passwd(args, stdin, ctx) {
+      const username = args[0] || ctx.currentUser;
+      if (username !== ctx.currentUser && !ctx.sudo) {
+        return fail('passwd: Permission denied.', `Cambiar la contraseña de otro usuario requiere privilegios de administrador: sudo passwd ${username}`);
+      }
+      const user = ctx.users.find((u) => u.username === username);
+      if (username !== ctx.currentUser && !user) {
+        return fail(`passwd: el usuario '${username}' no existe`, 'Comprueba el nombre de usuario, o créalo antes con useradd.');
+      }
+      if (user) user.hasPassword = true;
+      return ok('passwd: contraseña actualizada correctamente');
+    },
+
+    git(args, stdin, ctx) {
+      const sub = args[0];
+      const rest = args.slice(1);
+      if (sub === 'init') {
+        const node = ctx.vfs.getNode(ctx.getCwd());
+        if (node.gitRepo) return ok(`Reinicializado repositorio Git existente en ${ctx.vfs.pathToStr(ctx.getCwd())}/.git/`);
+        node.gitRepo = { staged: [], commits: [] };
+        return ok(`Repositorio Git vacío inicializado en ${ctx.vfs.pathToStr(ctx.getCwd())}/.git/`);
+      }
+      const repo = findGitRepo(ctx);
+      if (!repo) {
+        return fail(
+          'fatal: no es un repositorio git (ni ninguno de los directorios padres): .git',
+          'Primero debes inicializar un repositorio con "git init" en esta carpeta (o en una carpeta superior).'
+        );
+      }
+      const node = repo.node;
+      if (sub === 'status') {
+        const tracked = new Set(node.gitRepo.commits.flatMap((c) => c.files));
+        const staged = new Set(node.gitRepo.staged);
+        const names = Object.keys(node.children || {});
+        const untracked = names.filter((n) => !tracked.has(n) && !staged.has(n));
+        const parts = [];
+        if (staged.size > 0) parts.push('Cambios a confirmar:\n  ' + [...staged].map((f) => `nuevo archivo: ${f}`).join('\n  '));
+        if (untracked.length > 0) parts.push('Archivos sin seguimiento:\n  ' + untracked.join('\n  '));
+        if (parts.length === 0) parts.push('nada que confirmar, el árbol de trabajo está limpio');
+        return ok(parts.join('\n\n'));
+      }
+      if (sub === 'add') {
+        const targets = rest[0] === '.' ? Object.keys(node.children || {}) : rest;
+        if (targets.length === 0) return fail('git add: falta el archivo', 'Indica qué archivo añadir: git add archivo, o git add . para todos.');
+        node.gitRepo.staged = [...new Set([...node.gitRepo.staged, ...targets])];
+        return ok('');
+      }
+      if (sub === 'commit') {
+        const mIdx = rest.indexOf('-m');
+        const message = mIdx !== -1 ? rest[mIdx + 1] : null;
+        if (!message) return fail('git commit: falta el mensaje', 'Todo commit necesita un mensaje: git commit -m "mensaje descriptivo"');
+        if (node.gitRepo.staged.length === 0) {
+          return fail('git commit: nada que confirmar', 'No has añadido ningún archivo al área de preparación. Usa "git add <archivo>" primero.');
+        }
+        const hash = Math.random().toString(16).slice(2, 9);
+        node.gitRepo.commits.unshift({ message, files: [...node.gitRepo.staged], hash });
+        node.gitRepo.staged = [];
+        return ok(`[main ${hash}] ${message}`);
+      }
+      if (sub === 'log') {
+        if (node.gitRepo.commits.length === 0) return ok('');
+        return ok(node.gitRepo.commits.map((c) => `commit ${c.hash}\n\n    ${c.message}`).join('\n\n'));
+      }
+      return fail(`git: '${sub}' no es una orden git reconocida por este simulador`, 'Este simulador entiende: git init, git status, git add, git commit -m "...", git log.');
+    },
+
     help(args) {
       const catalog = {
         pwd: 'Muestra el directorio actual.',
@@ -1026,6 +1321,14 @@ window.TA = window.TA || {};
         free: 'Muestra el uso de memoria RAM y swap.',
         tar: 'Comprime/extrae archivos: tar -czf archivo.tar.gz carpeta/ o tar -xzf archivo.tar.gz.',
         clear: 'Limpia la pantalla de la terminal (o pulsa Ctrl+L).',
+        apt: 'Gestiona paquetes: apt update, apt search/list, apt install/remove (requiere sudo).',
+        dnf: 'Alias de apt para sistemas basados en Red Hat.',
+        systemctl: 'Gestiona servicios: systemctl status/start/stop/restart/enable/disable <servicio>.',
+        useradd: 'Crea un usuario nuevo (requiere sudo).',
+        groupadd: 'Crea un grupo nuevo (requiere sudo).',
+        usermod: 'Modifica un usuario: usermod -aG <grupo> <usuario> lo añade a un grupo (requiere sudo).',
+        passwd: 'Define o cambia la contraseña de un usuario.',
+        git: 'Control de versiones: git init, git status, git add, git commit -m "...", git log.',
       };
       if (args[0] && catalog[args[0]]) return ok(`${args[0]}: ${catalog[args[0]]}`);
       return ok(Object.entries(catalog).map(([k, v]) => `${k.padEnd(8)} ${v}`).join('\n'));
@@ -1084,34 +1387,36 @@ window.TA = window.TA || {};
   }
 
   function runLine(line, ctx) {
-    let tokens = tokenize(line.trim());
-    tokens = tokens.map((t) => (t === '|' || t === '>' || t === '>>' ? t : expandVars(t, ctx)));
+    let rawTokens = tokenize(line.trim());
 
     let background = false;
     let nohup = false;
-    if (tokens[0] === 'nohup') {
+    if (rawTokens[0] && rawTokens[0].quote === null && rawTokens[0].text === 'nohup') {
       nohup = true;
-      tokens = tokens.slice(1);
+      rawTokens = rawTokens.slice(1);
     }
-    if (tokens.length > 0 && tokens[tokens.length - 1] === '&') {
+    const lastRaw = rawTokens[rawTokens.length - 1];
+    if (lastRaw && lastRaw.quote === null && lastRaw.text === '&') {
       background = true;
-      tokens = tokens.slice(0, -1);
+      rawTokens = rawTokens.slice(0, -1);
     }
 
-    if (tokens.length === 0) return { ok: true, output: '', explain: null, stages: [], raw: line };
+    if (rawTokens.length === 0) return { ok: true, output: '', explain: null, stages: [], raw: line };
+    const displayCmd = rawTokens.map((t) => t.text).join(' ');
 
     const stageTokenGroups = [[]];
-    for (const t of tokens) {
-      if (t === '|') stageTokenGroups.push([]);
+    for (const t of rawTokens) {
+      if (t.quote === null && t.text === '|') stageTokenGroups.push([]);
       else stageTokenGroups[stageTokenGroups.length - 1].push(t);
     }
 
     let redirect = null;
     const lastIdx = stageTokenGroups.length - 1;
     const lastTokens = stageTokenGroups[lastIdx];
-    const redirIdx = lastTokens.findIndex((t) => t === '>' || t === '>>');
+    const redirIdx = lastTokens.findIndex((t) => t.quote === null && (t.text === '>' || t.text === '>>'));
     if (redirIdx !== -1) {
-      redirect = { append: lastTokens[redirIdx] === '>>', file: lastTokens[redirIdx + 1] };
+      const fileTok = lastTokens[redirIdx + 1];
+      redirect = { append: lastTokens[redirIdx].text === '>>', file: fileTok ? resolveToken(fileTok, ctx) : null };
       stageTokenGroups[lastIdx] = lastTokens.slice(0, redirIdx);
     }
 
@@ -1127,7 +1432,7 @@ window.TA = window.TA || {};
       }
       let stageTokens = stageTokensRaw;
       let stageSudo = false;
-      if (stageTokens[0] === 'sudo') {
+      if (stageTokens[0].quote === null && stageTokens[0].text === 'sudo') {
         stageSudo = true;
         stageTokens = stageTokens.slice(1);
       }
@@ -1136,7 +1441,8 @@ window.TA = window.TA || {};
         lastExplain = 'sudo debe ir seguido de otro comando, por ejemplo: sudo cat /etc/config.conf';
         break;
       }
-      const [cmd, ...args] = stageTokens;
+      const resolved = stageTokens.map((t) => resolveToken(t, ctx));
+      const [cmd, ...args] = resolved;
       const fn = COMMANDS[cmd];
       const prevSudo = ctx.sudo;
       if (stageSudo) ctx.sudo = true;
@@ -1144,7 +1450,7 @@ window.TA = window.TA || {};
       let result;
       if (!fn) {
         if (cmd.startsWith('./') || cmd.startsWith('/')) {
-          result = runScriptFile(cmd, ctx, true);
+          result = runScriptFile(cmd, args, ctx, true);
         } else {
           ctx.sudo = prevSudo;
           lastErr = `bash: ${cmd}: orden no encontrada`;
@@ -1173,9 +1479,11 @@ window.TA = window.TA || {};
       }
     }
 
+    ctx.env['?'] = lastErr ? '1' : '0';
+
     if (!lastErr && background) {
       const pid = nextPid(ctx);
-      ctx.jobs.push({ pid, cmd: tokens.join(' '), status: 'Running', nohup });
+      ctx.jobs.push({ pid, cmd: displayCmd, status: 'Running', nohup });
       return { ok: true, output: `[${ctx.jobs.length}] ${pid}`, explain: null, stages, raw: line };
     }
 

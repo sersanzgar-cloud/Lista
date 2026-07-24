@@ -572,6 +572,188 @@ window.TA = window.TA || {};
         return foundError && archived && extracted;
       },
     },
+
+    // --- Bloque avanzado: hacia el nivel de un profesional certificado ---
+
+    {
+      id: 'nivel-25',
+      title: 'Nivel 25 · Bucles en bash',
+      story: 'Antes de ejecutar un script que no has escrito tú, siempre conviene revisar qué hace. Este comprueba tres servidores con un bucle.',
+      objective: 'Lee chequeo.sh con cat para entender su bucle for, dale permiso de ejecución, y ejecútalo con ./chequeo.sh.',
+      commands: ['cat', 'chmod +x', './chequeo.sh'],
+      hints: [
+        'Buena práctica profesional: revisa el contenido de un script con cat antes de ejecutarlo.',
+        'Un bucle for en bash: for VAR in item1 item2 item3; do ... ; done — se repite una vez por cada elemento de la lista.',
+        'Dale permiso de ejecución con chmod +x chequeo.sh y ejecútalo con ./chequeo.sh',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome({
+        'chequeo.sh': file('#!/bin/bash\nfor s in web1 web2 web3; do\n  echo "Comprobando $s..."\ndone\n'),
+      }),
+      check(ctx) {
+        const stage = ctx.history.find((h) => h.cmd === './chequeo.sh' && !h.error);
+        return !!stage && ['web1', 'web2', 'web3'].every((s) => stage.output.includes(`Comprobando ${s}`));
+      },
+    },
+
+    {
+      id: 'nivel-26',
+      title: 'Nivel 26 · Condicionales en bash',
+      story: 'Un script de verificación necesita comportarse de forma distinta según si existe cierto archivo.',
+      objective: 'Ejecuta verificar.sh (usa un if/else) tal cual, comprueba que dice que falta "informe.txt", créalo, y vuelve a ejecutar el script para ver que ahora lo detecta.',
+      commands: ['./verificar.sh', 'touch'],
+      hints: [
+        'Ejecuta primero el script sin más: ./verificar.sh (dale permiso con chmod +x si hace falta).',
+        'La sintaxis: if [ -f archivo ]; then ... else ... fi comprueba si un archivo existe.',
+        'Crea el archivo que falta con touch informe.txt, y ejecuta el script otra vez para comparar el resultado.',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome({
+        'verificar.sh': file(
+          '#!/bin/bash\nif [ -f informe.txt ]; then\n  echo "informe.txt encontrado"\nelse\n  echo "informe.txt no encontrado"\nfi\n',
+          'rwxr-xr-x'
+        ),
+      }),
+      check(ctx) {
+        const ranMissing = anyStage(ctx.history, (h) => h.cmd === './verificar.sh' && h.output.includes('no encontrado'));
+        const created = !!ctx.vfs.getNode(['home', 'jugador', 'informe.txt']);
+        const ranFound = anyStage(ctx.history, (h) => h.cmd === './verificar.sh' && h.output.includes('informe.txt encontrado') && !h.output.includes('no encontrado'));
+        return ranMissing && created && ranFound;
+      },
+    },
+
+    {
+      id: 'nivel-27',
+      title: 'Nivel 27 · Argumentos y código de salida',
+      story: 'Quieres reutilizar un script pasándole el entorno como argumento, y comprobar si el último comando ha fallado.',
+      objective: 'Ejecuta entorno.sh pasándole "produccion" como argumento: ./entorno.sh produccion. Después consulta el código de salida del último comando con echo $?.',
+      commands: ['./entorno.sh', 'echo $?'],
+      hints: [
+        '$1 dentro de un script recibe el primer argumento con el que lo ejecutas.',
+        'Prueba: ./entorno.sh produccion',
+        '$? contiene el código de salida del último comando (0 = éxito). Compruébalo con: echo $?',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome({
+        'entorno.sh': file('#!/bin/bash\necho "Desplegando en: $1"\n', 'rwxr-xr-x'),
+      }),
+      check(ctx) {
+        const ran = anyStage(ctx.history, (h) => h.cmd === './entorno.sh' && h.output.includes('Desplegando en: produccion'));
+        const checkedStatus = anyStage(ctx.history, (h) => h.raw && h.raw.includes('$?'));
+        return ran && checkedStatus;
+      },
+    },
+
+    {
+      id: 'nivel-28',
+      title: 'Nivel 28 · Gestión de paquetes',
+      story: 'Necesitas instalar una herramienta de monitorización que no viene preinstalada en el servidor.',
+      objective: 'Busca el paquete "htop" con apt search, e instálalo con sudo apt install.',
+      commands: ['apt search', 'sudo apt install'],
+      hints: [
+        'apt search <término> busca en el repositorio de paquetes.',
+        'Instalar paquetes requiere privilegios de administrador: sudo apt install htop',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome(),
+      createPackages: () => ({
+        installed: [],
+        available: [
+          { name: 'htop', version: '3.2.1', description: 'monitor interactivo de procesos' },
+          { name: 'curl', version: '8.4', description: 'cliente HTTP de línea de comandos' },
+        ],
+      }),
+      check(ctx) {
+        return ctx.packages.installed.includes('htop') && anyStage(ctx.history, (h) => h.cmd === 'apt' && h.args[0] === 'search');
+      },
+    },
+
+    {
+      id: 'nivel-29',
+      title: 'Nivel 29 · Servicios con systemctl',
+      story: 'El servidor web no responde. El servicio nginx parece estar caído.',
+      objective: 'Comprueba el estado de nginx con systemctl status, arráncalo con sudo systemctl start, y actívalo para que arranque automáticamente en el próximo reinicio con sudo systemctl enable.',
+      commands: ['systemctl status', 'sudo systemctl start', 'sudo systemctl enable'],
+      hints: [
+        'systemctl status nginx muestra si el servicio está activo.',
+        'sudo systemctl start nginx lo arranca.',
+        'sudo systemctl enable nginx hace que arranque automáticamente en el próximo reinicio.',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome(),
+      createServices: () => [
+        { name: 'nginx', status: 'inactive', enabled: false },
+        { name: 'sshd', status: 'active', enabled: true },
+      ],
+      check(ctx) {
+        const svc = ctx.services.find((s) => s.name === 'nginx');
+        return !!svc && svc.status === 'active' && svc.enabled === true && usedCmd(ctx.history, 'systemctl');
+      },
+    },
+
+    {
+      id: 'nivel-30',
+      title: 'Nivel 30 · Usuarios y grupos',
+      story: 'Se incorpora una nueva compañera, "sofia", al equipo. Dale acceso al sistema.',
+      objective: 'Crea el usuario sofia (sudo useradd), asígnale contraseña (sudo passwd), crea el grupo "desarrollo" (sudo groupadd), y añade a sofia a ese grupo (sudo usermod -aG).',
+      commands: ['sudo useradd', 'sudo passwd', 'sudo groupadd', 'sudo usermod -aG'],
+      hints: [
+        'Crear usuarios y grupos requiere privilegios de administrador: antepón sudo a cada comando.',
+        'sudo useradd sofia, luego sudo passwd sofia',
+        'sudo groupadd desarrollo, luego sudo usermod -aG desarrollo sofia',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome(),
+      check(ctx) {
+        const user = ctx.users.find((u) => u.username === 'sofia');
+        return !!user && user.hasPassword && ctx.groups.includes('desarrollo') && user.groups.includes('desarrollo');
+      },
+    },
+
+    {
+      id: 'nivel-31',
+      title: 'Nivel 31 · Control de versiones con Git',
+      story: 'Vas a empezar a versionar el código de un proyecto pequeño para poder rastrear los cambios.',
+      objective: 'Entra en proyecto/, inicializa un repositorio con git init, añade app.py al área de preparación, confírmalo con un mensaje descriptivo, y comprueba el historial con git log.',
+      commands: ['cd', 'git init', 'git add', 'git commit -m', 'git log'],
+      hints: [
+        'Primero entra en la carpeta: cd proyecto',
+        'git init crea un repositorio nuevo en la carpeta actual.',
+        'git add app.py añade el archivo al área de preparación (staging); git commit -m "mensaje" confirma el cambio; git log muestra el historial.',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome({ proyecto: dir({ 'app.py': file('print("hola mundo")\n') }) }),
+      check(ctx) {
+        const node = ctx.vfs.getNode(['home', 'jugador', 'proyecto']);
+        const hasCommit = !!node && !!node.gitRepo && node.gitRepo.commits.length > 0;
+        const loggedIt = anyStage(ctx.history, (h) => h.cmd === 'git' && h.args[0] === 'log' && h.output.includes('commit'));
+        return hasCommit && loggedIt;
+      },
+    },
+
+    {
+      id: 'nivel-32',
+      title: 'Nivel 32 · Reto final: despliegue completo',
+      story: 'Último desafío: un despliegue profesional típico. Código versionado, dependencia instalada, servicio reiniciado.',
+      objective: 'Dentro de proyecto/, inicializa git, añade y confirma app.py con el mensaje "Version inicial". Instala el paquete "rsync" con apt. Reinicia el servicio "app" con sudo systemctl restart.',
+      commands: ['git', 'sudo apt install', 'sudo systemctl restart'],
+      hints: [
+        'cd proyecto; git init; git add app.py; git commit -m "Version inicial"',
+        'sudo apt install rsync',
+        'sudo systemctl restart app',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome({ proyecto: dir({ 'app.py': file('print("v1")\n') }) }),
+      createPackages: () => ({ installed: [], available: [{ name: 'rsync', version: '3.2', description: 'sincronización de archivos' }] }),
+      createServices: () => [{ name: 'app', status: 'active', enabled: true }],
+      check(ctx) {
+        const node = ctx.vfs.getNode(['home', 'jugador', 'proyecto']);
+        const committed = !!node && !!node.gitRepo && node.gitRepo.commits.length > 0;
+        const installed = ctx.packages.installed.includes('rsync');
+        const restarted = anyStage(ctx.history, (h) => h.cmd === 'systemctl' && (h.args[0] === 'restart' || h.args[0] === 'start') && h.args[1] === 'app' && !h.error);
+        return committed && installed && restarted;
+      },
+    },
   ];
 
   TA.LEVELS = LEVELS;
