@@ -7,12 +7,12 @@ window.TA = window.TA || {};
     4: 'r--', 5: 'r-x', 6: 'rw-', 7: 'rwx',
   };
 
-  function file(content = '', perms = 'rw-r--r--') {
-    return { type: 'file', perms, content };
+  function file(content = '', perms = 'rw-r--r--', owner = 'jugador', group = 'jugador') {
+    return { type: 'file', perms, content, owner, group };
   }
 
-  function dir(children = {}, perms = 'rwxr-xr-x') {
-    return { type: 'dir', perms, children };
+  function dir(children = {}, perms = 'rwxr-xr-x', owner = 'jugador', group = 'jugador') {
+    return { type: 'dir', perms, children, owner, group };
   }
 
   function octalToRwx(mode) {
@@ -20,6 +20,35 @@ window.TA = window.TA || {};
       .split('')
       .map((d) => OCTAL_TO_RWX[d] ?? '---')
       .join('');
+  }
+
+  const PERM_INDEX = { r: 0, w: 1, x: 2 };
+
+  // ¿Puede `user` (miembro de `userGroups`) hacer `kind` (r/w/x) sobre este nodo?
+  function hasPermission(node, kind, user, userGroups) {
+    const idx = PERM_INDEX[kind];
+    let base;
+    if (node.owner === user) base = 0;
+    else if (userGroups && userGroups.includes(node.group)) base = 3;
+    else base = 6;
+    return node.perms[base + idx] !== '-';
+  }
+
+  function applyUmask(perms, umask) {
+    // umask resta permisos (como en Linux real) a partir de los "default" 666/777.
+    const bits = 'rwx';
+    const digits = String(umask).padStart(3, '0').split('').map(Number);
+    return [0, 1, 2].map((triple) => {
+      const maskDigit = digits[triple];
+      let out = '';
+      for (let i = 0; i < 3; i++) {
+        const bit = 1 << (2 - i);
+        const allowedBySource = perms[triple * 3 + i] !== '-';
+        const blockedByUmask = (maskDigit & bit) !== 0;
+        out += (allowedBySource && !blockedByUmask) ? bits[i] : '-';
+      }
+      return out;
+    }).join('');
   }
 
   class VFS {
@@ -77,5 +106,5 @@ window.TA = window.TA || {};
   }
 
   TA.VFS = VFS;
-  TA.vfsHelpers = { file, dir, octalToRwx };
+  TA.vfsHelpers = { file, dir, octalToRwx, hasPermission, applyUmask };
 })();

@@ -17,6 +17,11 @@ window.TA = window.TA || {};
     inputPointer: 0,
     hintIndex: 0,
     levelDone: false,
+    env: {},
+    processes: [],
+    jobs: [],
+    network: { routes: {}, hosts: {}, ports: [] },
+    umask: '022',
   };
 
   function loadProgress() {
@@ -113,6 +118,11 @@ window.TA = window.TA || {};
     state.inputPointer = 0;
     state.hintIndex = 0;
     state.levelDone = state.completed.has(i);
+    state.env = level.createEnv ? level.createEnv() : {};
+    state.processes = level.createProcesses ? level.createProcesses() : [];
+    state.jobs = [];
+    state.network = level.createNetwork ? level.createNetwork() : { routes: {}, hosts: {}, ports: [] };
+    state.umask = level.initialUmask || '022';
 
     els.title.textContent = level.title;
     els.story.textContent = level.story;
@@ -146,6 +156,15 @@ window.TA = window.TA || {};
       vfs: state.vfs,
       getCwd: () => state.cwd,
       setCwd: (arr) => { state.cwd = arr; },
+      env: state.env,
+      currentUser: 'jugador',
+      userGroups: ['jugador', 'sudo'],
+      sudo: false,
+      processes: state.processes,
+      jobs: state.jobs,
+      network: state.network,
+      getUmask: () => state.umask,
+      setUmask: (val) => { state.umask = val; },
     };
   }
 
@@ -203,6 +222,11 @@ window.TA = window.TA || {};
         cwd: state.cwd,
         history: state.history,
         visited: state.visited,
+        env: state.env,
+        processes: state.processes,
+        jobs: state.jobs,
+        network: state.network,
+        umask: state.umask,
       });
       if (passed) markComplete();
     }
