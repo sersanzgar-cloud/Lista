@@ -4,8 +4,13 @@ window.TA = window.TA || {};
 (function () {
   const STORAGE_KEY = 'terminal-academy-progress-v1';
   const BEST_KEY = 'terminal-academy-best-v1';
+  const WIN_STORAGE_KEYS = {
+    cmd: 'terminal-academy-win-cmd-progress-v1',
+    powershell: 'terminal-academy-win-ps-progress-v1',
+  };
   const LEVELS = TA.LEVELS;
   const CHALLENGES = TA.CHALLENGES;
+  const WIN_LEVELS = TA.WIN_LEVELS;
 
   const els = {};
   let state = {
@@ -66,10 +71,35 @@ window.TA = window.TA || {};
       timeLeft: 0,
       timerHandle: null,
     },
+    windows: {
+      flavor: 'cmd',
+      cmd: makeWinTrackState(),
+      powershell: makeWinTrackState(),
+    },
   };
 
+  function makeWinTrackState() {
+    return {
+      levelIndex: 0,
+      completed: new Set(),
+      vfs: null,
+      cwd: [],
+      history: [],
+      visited: new Set(),
+      inputHistory: [],
+      inputPointer: 0,
+      hintIndex: 0,
+      levelDone: false,
+      env: {},
+      processes: [],
+      network: {},
+    };
+  }
+
   function activeState() {
-    return state.mode === 'challenge' ? state.challenge : state;
+    if (state.mode === 'challenge') return state.challenge;
+    if (state.mode === 'windows') return state.windows[state.windows.flavor];
+    return state;
   }
 
   function loadBest() {
@@ -100,6 +130,26 @@ window.TA = window.TA || {};
 
   function isUnlocked(i) {
     return i === 0 || state.completed.has(i - 1) || state.completed.has(i);
+  }
+
+  function loadWinProgress(flavor) {
+    try {
+      const raw = localStorage.getItem(WIN_STORAGE_KEYS[flavor]);
+      if (!raw) return new Set();
+      return new Set(JSON.parse(raw));
+    } catch {
+      return new Set();
+    }
+  }
+
+  function saveWinProgress(flavor) {
+    const w = state.windows[flavor];
+    localStorage.setItem(WIN_STORAGE_KEYS[flavor], JSON.stringify([...w.completed]));
+  }
+
+  function isWinUnlocked(flavor, i) {
+    const w = state.windows[flavor];
+    return i === 0 || w.completed.has(i - 1) || w.completed.has(i);
   }
 
   function cacheEls() {
@@ -146,6 +196,23 @@ window.TA = window.TA || {};
     els.challengeToLearnBtn = document.getElementById('challenge-to-learn-btn');
     els.allLevelsBanner = document.getElementById('all-levels-banner');
     els.gotoChallengeBtn = document.getElementById('goto-challenge-btn');
+
+    els.tabWindows = document.getElementById('tab-windows');
+    els.learnSidebarWrap = document.getElementById('learn-sidebar');
+    els.windowsSidebar = document.getElementById('windows-sidebar');
+    els.winFlavorCmd = document.getElementById('win-flavor-cmd');
+    els.winFlavorPs = document.getElementById('win-flavor-ps');
+    els.winSidebar = document.getElementById('win-level-list');
+    els.windowsPanel = document.getElementById('windows-panel');
+    els.winTitle = document.getElementById('win-title');
+    els.winStory = document.getElementById('win-story');
+    els.winObjective = document.getElementById('win-objective');
+    els.winCommandChips = document.getElementById('win-command-chips');
+    els.winHintBtn = document.getElementById('win-hint-btn');
+    els.winHintText = document.getElementById('win-hint-text');
+    els.winResetBtn = document.getElementById('win-reset-btn');
+    els.winSuccessBanner = document.getElementById('win-success-banner');
+    els.winNextBtn = document.getElementById('win-next-btn');
   }
 
   function rankText(score) {
@@ -178,6 +245,11 @@ window.TA = window.TA || {};
   }
 
   function promptText() {
+    if (state.mode === 'windows') {
+      const w = state.windows[state.windows.flavor];
+      const pathStr = w.vfs.pathToStr(w.cwd);
+      return state.windows.flavor === 'cmd' ? `${pathStr}>` : `PS ${pathStr}>`;
+    }
     const s = activeState();
     const cwdStr = s.vfs.pathToStr(s.cwd);
     const short = cwdStr.replace(/^\/home\/jugador/, '~');
@@ -280,6 +352,18 @@ window.TA = window.TA || {};
   }
 
   function buildExecCtx() {
+    if (state.mode === 'windows') {
+      const w = state.windows[state.windows.flavor];
+      return {
+        vfs: w.vfs,
+        getCwd: () => w.cwd,
+        setCwd: (arr) => { w.cwd = arr; },
+        env: w.env,
+        processes: w.processes,
+        network: w.network,
+        flavor: state.windows.flavor,
+      };
+    }
     return buildExecCtxFor(activeState());
   }
 
@@ -364,10 +448,13 @@ window.TA = window.TA || {};
   }
 
   function completeInput() {
+    const isWin = state.mode === 'windows';
     const s = activeState();
+    const shellApi = isWin ? TA.WinShell : TA.Shell;
+    const sep = isWin ? '\\' : '/';
     const raw = els.input.value;
     const endsWithSpace = raw.length === 0 || /\s$/.test(raw);
-    const tokens = TA.Shell.tokenize(raw);
+    const tokens = shellApi.tokenize(raw);
     const isCommandSlot = tokens.length === 0 || (tokens.length === 1 && !endsWithSpace);
 
     const m = raw.match(/(\S*)$/);
@@ -376,18 +463,21 @@ window.TA = window.TA || {};
 
     let candidates = [];
     if (isCommandSlot) {
-      candidates = Object.keys(TA.Shell.COMMANDS).filter((c) => c.startsWith(currentToken)).sort();
+      const table = isWin
+        ? (state.windows.flavor === 'cmd' ? TA.WinShell.CMD_COMMANDS : TA.WinShell.PS_COMMANDS)
+        : TA.Shell.COMMANDS;
+      candidates = Object.keys(table).filter((c) => c.startsWith(currentToken.toLowerCase())).sort();
     } else {
-      const slashIdx = currentToken.lastIndexOf('/');
+      const slashIdx = currentToken.lastIndexOf(sep);
       const dirPart = slashIdx === -1 ? '' : currentToken.slice(0, slashIdx + 1);
       const filePrefix = slashIdx === -1 ? currentToken : currentToken.slice(slashIdx + 1);
       const dirPath = s.vfs.normalize(dirPart || '.', s.cwd);
       const dirNode = s.vfs.getNode(dirPath);
       if (dirNode && dirNode.type === 'dir') {
         candidates = Object.keys(dirNode.children)
-          .filter((n) => n.startsWith(filePrefix))
+          .filter((n) => n.toLowerCase().startsWith(filePrefix.toLowerCase()))
           .sort()
-          .map((n) => dirPart + n + (dirNode.children[n].type === 'dir' ? '/' : ''));
+          .map((n) => dirPart + n + (dirNode.children[n].type === 'dir' ? sep : ''));
       }
     }
 
@@ -405,7 +495,160 @@ window.TA = window.TA || {};
     const val = els.input.value;
     els.input.value = '';
     if (state.mode === 'challenge') runChallengeCommandLine(val);
+    else if (state.mode === 'windows') runWinCommandLine(val);
     else runCommandLine(val);
+  }
+
+  // --- Modo Windows (CMD / PowerShell) ---
+
+  function renderWinSidebar() {
+    const flavor = state.windows.flavor;
+    const w = state.windows[flavor];
+    const levels = WIN_LEVELS[flavor];
+    els.winSidebar.innerHTML = '';
+    levels.forEach((level, i) => {
+      const li = document.createElement('li');
+      const unlocked = isWinUnlocked(flavor, i);
+      const done = w.completed.has(i);
+      li.className = 'level-item'
+        + (i === w.levelIndex ? ' active' : '')
+        + (done ? ' done' : '')
+        + (!unlocked ? ' locked' : '');
+      const icon = done ? '✔' : (unlocked ? String(i + 1).padStart(2, '0') : '🔒');
+      const shortTitle = level.title.replace(/^(CMD|PowerShell) \d+ · /, '');
+      li.innerHTML = `<span class="level-icon">${icon}</span><span class="level-name">${shortTitle}</span>`;
+      if (unlocked) li.addEventListener('click', () => loadWinLevel(flavor, i));
+      els.winSidebar.appendChild(li);
+    });
+  }
+
+  function loadWinLevel(flavor, i) {
+    const level = WIN_LEVELS[flavor][i];
+    const w = state.windows[flavor];
+    w.levelIndex = i;
+    w.vfs = new TA.WinVFS(level.createFs());
+    w.cwd = [...level.startCwd];
+    w.history = [];
+    w.visited = new Set();
+    w.inputHistory = [];
+    w.inputPointer = 0;
+    w.hintIndex = 0;
+    w.levelDone = w.completed.has(i);
+    w.env = level.createEnv ? level.createEnv() : {};
+    w.processes = level.createProcesses ? level.createProcesses() : [];
+    w.network = level.createNetwork ? level.createNetwork() : {};
+
+    if (state.windows.flavor === flavor) {
+      refreshWinPanel(flavor);
+    }
+
+    if (state.mode === 'windows' && state.windows.flavor === flavor) {
+      els.output.innerHTML = '';
+      printLine(`--- ${level.title} ---`, 'term-meta');
+      printLine(level.story, 'term-meta');
+      printLine('Escribe "help" para ver los comandos disponibles. Tab autocompleta, Ctrl+L limpia la pantalla.', 'term-meta');
+      els.prompt.textContent = promptText();
+      els.input.value = '';
+      els.input.focus();
+    }
+
+    renderWinSidebar();
+  }
+
+  function refreshWinPanel(flavor) {
+    const w = state.windows[flavor];
+    const level = WIN_LEVELS[flavor][w.levelIndex];
+    els.winTitle.textContent = level.title;
+    els.winStory.textContent = level.story;
+    els.winObjective.textContent = level.objective;
+    els.winCommandChips.innerHTML = level.commands.map((c) => `<span class="chip">${c}</span>`).join('');
+    els.winHintText.textContent = '';
+    els.winHintText.classList.remove('visible');
+    const isLast = w.levelIndex === WIN_LEVELS[flavor].length - 1;
+    if (w.levelDone) {
+      els.winSuccessBanner.classList.add('visible');
+      els.winNextBtn.style.display = isLast ? 'none' : 'inline-block';
+    } else {
+      els.winSuccessBanner.classList.remove('visible');
+      els.winNextBtn.style.display = 'none';
+    }
+  }
+
+  function markWinComplete() {
+    const flavor = state.windows.flavor;
+    const w = state.windows[flavor];
+    if (w.completed.has(w.levelIndex)) return;
+    w.completed.add(w.levelIndex);
+    saveWinProgress(flavor);
+    w.levelDone = true;
+    els.winSuccessBanner.classList.add('visible');
+    const isLast = w.levelIndex === WIN_LEVELS[flavor].length - 1;
+    els.winNextBtn.style.display = isLast ? 'none' : 'inline-block';
+    renderWinSidebar();
+  }
+
+  function nextWinHint() {
+    const level = WIN_LEVELS[state.windows.flavor][state.windows[state.windows.flavor].levelIndex];
+    const w = state.windows[state.windows.flavor];
+    if (w.hintIndex >= level.hints.length) w.hintIndex = 0;
+    els.winHintText.textContent = level.hints[w.hintIndex];
+    els.winHintText.classList.add('visible');
+    w.hintIndex++;
+  }
+
+  function runWinCommandLine(raw) {
+    const trimmed = raw.trim();
+    if (trimmed === '') return;
+    const flavor = state.windows.flavor;
+    const w = state.windows[flavor];
+
+    printLine(`${promptText()} ${raw}`, 'term-input-echo');
+    w.inputHistory.push(raw);
+    w.inputPointer = w.inputHistory.length;
+
+    const ctx = buildExecCtx();
+    const result = TA.WinShell.runLine(trimmed, ctx);
+
+    for (const stage of result.stages) {
+      w.history.push({ ...stage, raw: trimmed });
+      if ((stage.cmd === 'cd' || stage.cmd === 'set-location') && !stage.error) {
+        w.visited.add(w.vfs.pathToStr(w.cwd));
+      }
+    }
+
+    if (result.clear) handleClear();
+
+    if (!result.ok) {
+      printBlock(result.output, 'term-error');
+      printExplain(result.explain);
+    } else {
+      printBlock(result.output, 'term-output');
+    }
+
+    els.prompt.textContent = promptText();
+
+    if (!w.levelDone) {
+      const level = WIN_LEVELS[flavor][w.levelIndex];
+      const passed = level.check({
+        vfs: w.vfs,
+        cwd: w.cwd,
+        history: w.history,
+        visited: w.visited,
+        env: w.env,
+        processes: w.processes,
+        network: w.network,
+      });
+      if (passed) markWinComplete();
+    }
+  }
+
+  function switchWinFlavor(flavor) {
+    if (state.windows.flavor === flavor) return;
+    state.windows.flavor = flavor;
+    els.winFlavorCmd.classList.toggle('active', flavor === 'cmd');
+    els.winFlavorPs.classList.toggle('active', flavor === 'powershell');
+    const w = state.windows[flavor];
+    loadWinLevel(flavor, w.levelIndex);
   }
 
   // --- Modo Desafío ---
@@ -620,23 +863,36 @@ window.TA = window.TA || {};
     state.mode = mode;
     els.tabLearn.classList.toggle('active', mode === 'learn');
     els.tabChallenge.classList.toggle('active', mode === 'challenge');
+    els.tabWindows.classList.toggle('active', mode === 'windows');
     els.appMain.classList.toggle('challenge-mode', mode === 'challenge');
+
+    els.learnSidebarWrap.style.display = mode === 'learn' ? '' : 'none';
+    els.windowsSidebar.style.display = mode === 'windows' ? '' : 'none';
+    els.learnPanel.style.display = mode === 'learn' ? '' : 'none';
+    els.windowsPanel.style.display = mode === 'windows' ? '' : 'none';
+    els.challengeIntro.style.display = 'none';
+    els.challengePanel.style.display = 'none';
+    els.challengeGameover.style.display = 'none';
 
     if (mode === 'learn') {
       stopTimer();
-      els.learnPanel.style.display = '';
-      els.challengeIntro.style.display = 'none';
-      els.challengePanel.style.display = 'none';
-      els.challengeGameover.style.display = 'none';
       els.output.innerHTML = '';
       const level = LEVELS[state.levelIndex];
       printLine(`--- ${level.title} ---`, 'term-meta');
       printLine(level.story, 'term-meta');
       printLine('Escribe "help" para ver los comandos disponibles. Tab autocompleta, Ctrl+L limpia la pantalla.', 'term-meta');
       els.prompt.textContent = promptText();
+    } else if (mode === 'windows') {
+      stopTimer();
+      renderWinSidebar();
+      const w = state.windows[state.windows.flavor];
+      const level = WIN_LEVELS[state.windows.flavor][w.levelIndex];
+      els.output.innerHTML = '';
+      printLine(`--- ${level.title} ---`, 'term-meta');
+      printLine(level.story, 'term-meta');
+      printLine('Escribe "help" para ver los comandos disponibles. Tab autocompleta, Ctrl+L limpia la pantalla.', 'term-meta');
+      els.prompt.textContent = promptText();
     } else {
-      els.learnPanel.style.display = 'none';
-      els.challengeGameover.style.display = 'none';
       const c = state.challenge;
       if (c.active && c.current) {
         els.challengeIntro.style.display = 'none';
@@ -710,10 +966,27 @@ window.TA = window.TA || {};
 
     els.tabLearn.addEventListener('click', () => switchMode('learn'));
     els.tabChallenge.addEventListener('click', () => switchMode('challenge'));
+    els.tabWindows.addEventListener('click', () => switchMode('windows'));
     els.challengeStartBtn.addEventListener('click', startChallengeRun);
     els.challengeRestartBtn.addEventListener('click', startChallengeRun);
     els.challengeToLearnBtn.addEventListener('click', () => switchMode('learn'));
     els.gotoChallengeBtn.addEventListener('click', () => switchMode('challenge'));
+
+    els.winFlavorCmd.addEventListener('click', () => switchWinFlavor('cmd'));
+    els.winFlavorPs.addEventListener('click', () => switchWinFlavor('powershell'));
+    els.winHintBtn.addEventListener('click', nextWinHint);
+    els.winResetBtn.addEventListener('click', () => loadWinLevel(state.windows.flavor, state.windows[state.windows.flavor].levelIndex));
+    els.winNextBtn.addEventListener('click', () => {
+      const flavor = state.windows.flavor;
+      const w = state.windows[flavor];
+      if (w.levelIndex < WIN_LEVELS[flavor].length - 1) loadWinLevel(flavor, w.levelIndex + 1);
+    });
+    els.winCommandChips.addEventListener('click', (e) => {
+      if (e.target.classList.contains('chip')) {
+        els.input.value = e.target.textContent + ' ';
+        els.input.focus();
+      }
+    });
 
     els.commandChips.addEventListener('click', (e) => {
       if (e.target.classList.contains('chip')) {
@@ -759,7 +1032,16 @@ window.TA = window.TA || {};
     cacheEls();
     state.completed = loadProgress();
     state.challenge.best = loadBest();
+    state.windows.cmd.completed = loadWinProgress('cmd');
+    state.windows.powershell.completed = loadWinProgress('powershell');
     bindEvents();
+
+    ['cmd', 'powershell'].forEach((flavor) => {
+      const w = state.windows[flavor];
+      const firstUnfinishedWin = WIN_LEVELS[flavor].findIndex((_, i) => !w.completed.has(i));
+      loadWinLevel(flavor, firstUnfinishedWin === -1 ? WIN_LEVELS[flavor].length - 1 : firstUnfinishedWin);
+    });
+
     const firstUnfinished = LEVELS.findIndex((_, i) => !state.completed.has(i));
     loadLevel(firstUnfinished === -1 ? LEVELS.length - 1 : firstUnfinished);
   }

@@ -6,7 +6,7 @@ de archivos virtual, permisos reales (lectura/escritura/ejecución, propietarios
 `sudo`), procesos, variables de entorno y red. Cada nivel plantea un objetivo y se
 completa automáticamente al ejecutar los comandos correctos.
 
-Tiene dos modos, con pestañas para cambiar entre ellos:
+Tiene tres modos, con pestañas para cambiar entre ellos:
 - **📘 Aprender:** los niveles descritos abajo, sin límite de tiempo.
 - **⚡ Desafío:** retos de terminal contrarreloj sobre la misma terminal real (no es
   un examen tipo test). Se te da un objetivo y tienes que escribir el comando correcto
@@ -15,6 +15,12 @@ Tiene dos modos, con pestañas para cambiar entre ellos:
   rápido aciertas, más puntos ganas; la mejor puntuación se guarda en el navegador.
   La puntuación se traduce en un rango (de 🌱 Aprendiz a 👑 Maestro del Terminal), así
   que quien complete los 43 niveles puede entrar al Desafío y descubrir su nivel real.
+- **🪟 Windows:** el mismo enfoque por niveles, pero para las dos terminales de
+  Windows — **CMD** (símbolo del sistema clásico: `dir`, `cd`, `copy`, `del`, `findstr`,
+  `tasklist`...) y **PowerShell** (cmdlets modernos: `Get-ChildItem`, `Set-Location`,
+  `Copy-Item`, `Select-String`, `$env:VARIABLE`...). Un selector dentro de la pestaña
+  cambia entre ambas, cada una con sus propios 9 niveles, progreso y sistema de
+  archivos con rutas al estilo `C:\Users\jugador`.
 
 43 niveles (0-42) en seis bloques:
 - **Nivel 0 (introducción):** qué es una terminal, qué es Linux, cómo leer el prompt
@@ -65,6 +71,13 @@ El progreso se guarda en el `localStorage` del navegador.
   validación).
 - `src/challenges.js` — pool de retos del Modo Desafío, agrupados por dificultad
   (fácil, medio, difícil) con su tiempo límite y puntuación base.
-- `src/game.js` — controlador de la interfaz: terminal, progreso, pistas, barra táctil,
-  y el estado/temporizador/vidas/puntuación del Modo Desafío.
+- `src/winvfs.js` — sistema de archivos virtual estilo Windows (unidad `C:\`, rutas
+  con backslash, insensible a mayúsculas, atributos oculto/solo-lectura).
+- `src/winshell.js` — intérprete de CMD y PowerShell: tuberías, redirección,
+  expansión de variables (`%VAR%` en CMD, `$env:VAR` en PowerShell), y los cmdlets con
+  sus alias reales (`dir`/`ls`/`Get-ChildItem`, `cd`/`Set-Location`, etc.).
+- `src/winlevels.js` — 9 niveles de CMD y 9 de PowerShell.
+- `src/game.js` — controlador de la interfaz: terminal compartida entre los tres modos,
+  progreso, pistas, barra táctil, y el estado de cada modo (niveles, temporizador del
+  Desafío, y las dos pistas de Windows).
 - `manifest.json` / `service-worker.js` / `icons/` — PWA instalable en Android.

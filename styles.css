@@ -244,6 +244,22 @@ html, body {
 }
 .link-btn:hover { color: var(--accent-dim); }
 
+.win-flavor-toggle { display: flex; gap: 6px; margin-bottom: 14px; }
+.win-flavor-btn {
+  flex: 1;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.win-flavor-btn.active { background: var(--panel-alt); color: var(--accent); border-color: var(--accent-dim); }
+.win-flavor-btn:hover:not(.active) { color: var(--text); }
+
 .terminal {
   background: #0a0e14;
   border: 1px solid var(--border);

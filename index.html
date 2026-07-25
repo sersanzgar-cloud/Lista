@@ -34,6 +34,7 @@
   <nav class="mode-tabs">
     <button id="tab-learn" class="mode-tab active" data-mode="learn">📘 Aprender</button>
     <button id="tab-challenge" class="mode-tab" data-mode="challenge">⚡ Desafío</button>
+    <button id="tab-windows" class="mode-tab" data-mode="windows">🪟 Windows</button>
   </nav>
 
   <main class="app-main">
@@ -44,6 +45,15 @@
         🎉 ¡Has completado los 43 niveles! Descubre tu nivel real de administrador en el
         <button id="goto-challenge-btn" class="link-btn">Modo Desafío ⚡</button>
       </div>
+    </aside>
+
+    <aside id="windows-sidebar" class="sidebar" style="display:none;">
+      <div class="win-flavor-toggle">
+        <button id="win-flavor-cmd" class="win-flavor-btn active" data-flavor="cmd">CMD</button>
+        <button id="win-flavor-ps" class="win-flavor-btn" data-flavor="powershell">PowerShell</button>
+      </div>
+      <h2>Niveles</h2>
+      <ul id="win-level-list" class="level-list"></ul>
     </aside>
 
     <section class="content">
@@ -98,6 +108,23 @@
         </div>
       </div>
 
+      <div id="windows-panel" class="level-panel" style="display:none;">
+        <h2 id="win-title">Nivel</h2>
+        <p id="win-story" class="level-story"></p>
+        <p class="objective-label">🎯 Objetivo</p>
+        <p id="win-objective" class="level-objective"></p>
+        <div id="win-command-chips" class="chips"></div>
+        <div class="level-actions">
+          <button id="win-hint-btn" class="btn btn-secondary">💡 Pista</button>
+          <button id="win-reset-btn" class="btn btn-secondary">↺ Reiniciar nivel</button>
+        </div>
+        <p id="win-hint-text" class="hint-text"></p>
+        <div id="win-success-banner" class="success-banner">
+          ✅ ¡Nivel completado!
+          <button id="win-next-btn" class="btn btn-primary">Siguiente nivel →</button>
+        </div>
+      </div>
+
       <div class="terminal">
         <div class="terminal-titlebar">
           <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
@@ -132,6 +159,9 @@
   <script src="src/shell.js"></script>
   <script src="src/levels.js"></script>
   <script src="src/challenges.js"></script>
+  <script src="src/winvfs.js"></script>
+  <script src="src/winshell.js"></script>
+  <script src="src/winlevels.js"></script>
   <script src="src/game.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
