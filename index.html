@@ -40,6 +40,10 @@
     <aside id="learn-sidebar" class="sidebar">
       <h2>Niveles</h2>
       <ul id="level-list" class="level-list"></ul>
+      <div id="all-levels-banner" class="all-levels-banner" style="display:none;">
+        🎉 ¡Has completado los 43 niveles! Descubre tu nivel real de administrador en el
+        <button id="goto-challenge-btn" class="link-btn">Modo Desafío ⚡</button>
+      </div>
     </aside>
 
     <section class="content">
@@ -65,7 +69,8 @@
         <p class="level-story">Retos de terminal contrarreloj. Se te da un objetivo y tienes que escribir el
           comando correcto antes de que se acabe el tiempo. Empiezas con 3 vidas: cada fallo o cada
           tiempo agotado te cuesta una vida. Cuanto más rápido aciertes, más puntos ganas.</p>
-        <p class="challenge-best">🏆 Mejor puntuación: <span id="challenge-best-intro">0</span></p>
+        <p class="challenge-best">🏆 Mejor puntuación: <span id="challenge-best-intro">0</span>
+          — <span id="challenge-rank-intro">🌱 Aprendiz</span></p>
         <button id="challenge-start-btn" class="btn btn-primary">▶ Empezar desafío</button>
       </div>
 
@@ -75,6 +80,7 @@
           <span class="challenge-stat">⭐ <span id="challenge-score">0</span></span>
           <span class="challenge-stat">🔥 <span id="challenge-streak">0</span></span>
           <span class="challenge-stat">🏆 <span id="challenge-best">0</span></span>
+          <span class="challenge-stat">🎖️ <span id="challenge-rank">Aprendiz</span></span>
         </div>
         <p class="objective-label" id="challenge-tier-label">🎯 Reto</p>
         <p id="challenge-objective" class="level-objective"></p>
@@ -84,7 +90,8 @@
       <div id="challenge-gameover" class="level-panel challenge-gameover" style="display:none;">
         <h2>💀 ¡Fin del desafío!</h2>
         <p>Puntuación final: <strong id="gameover-score">0</strong></p>
-        <p>Mejor puntuación: <strong id="gameover-best">0</strong></p>
+        <p class="gameover-rank">Tu nivel: <strong id="gameover-rank">🌱 Aprendiz</strong></p>
+        <p>Mejor puntuación: <strong id="gameover-best">0</strong> (<span id="gameover-best-rank">🌱 Aprendiz</span>)</p>
         <div class="level-actions">
           <button id="challenge-restart-btn" class="btn btn-primary">↺ Volver a intentarlo</button>
           <button id="challenge-to-learn-btn" class="btn btn-secondary">📘 Ir a Aprender</button>

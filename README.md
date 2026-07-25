@@ -13,6 +13,8 @@ Tiene dos modos, con pestañas para cambiar entre ellos:
   antes de que se acabe el tiempo. Empiezas con 3 vidas; cada vez que se agota el
   tiempo de un reto pierdes una vida, y la partida termina al llegar a 0. Cuanto más
   rápido aciertas, más puntos ganas; la mejor puntuación se guarda en el navegador.
+  La puntuación se traduce en un rango (de 🌱 Aprendiz a 👑 Maestro del Terminal), así
+  que quien complete los 43 niveles puede entrar al Desafío y descubrir su nivel real.
 
 43 niveles (0-42) en seis bloques:
 - **Nivel 0 (introducción):** qué es una terminal, qué es Linux, cómo leer el prompt

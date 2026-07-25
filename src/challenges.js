@@ -245,6 +245,23 @@ window.TA = window.TA || {};
     },
   ];
 
+  const RANKS = [
+    { min: 0, title: 'Aprendiz', icon: '🌱' },
+    { min: 40, title: 'Operador Junior', icon: '🔧' },
+    { min: 100, title: 'Administrador de Sistemas', icon: '🖥️' },
+    { min: 200, title: 'Ingeniero DevOps', icon: '🌐' },
+    { min: 350, title: 'Arquitecto de Infraestructura', icon: '🛡️' },
+    { min: 550, title: 'Maestro del Terminal', icon: '👑' },
+  ];
+
+  function rankForScore(score) {
+    let current = RANKS[0];
+    for (const tier of RANKS) {
+      if (score >= tier.min) current = tier;
+    }
+    return current;
+  }
+
   function shuffle(arr) {
     const a = [...arr];
     for (let i = a.length - 1; i > 0; i--) {
@@ -257,4 +274,6 @@ window.TA = window.TA || {};
   TA.CHALLENGES = CHALLENGES;
   TA.CHALLENGE_TIERS = TIER_CONFIG;
   TA.shuffleChallenges = shuffle;
+  TA.RANKS = RANKS;
+  TA.rankForScore = rankForScore;
 })();

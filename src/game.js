@@ -126,20 +126,31 @@ window.TA = window.TA || {};
 
     els.challengeIntro = document.getElementById('challenge-intro');
     els.challengeBestIntro = document.getElementById('challenge-best-intro');
+    els.challengeRankIntro = document.getElementById('challenge-rank-intro');
     els.challengeStartBtn = document.getElementById('challenge-start-btn');
     els.challengePanel = document.getElementById('challenge-panel');
     els.challengeLives = document.getElementById('challenge-lives');
     els.challengeScore = document.getElementById('challenge-score');
     els.challengeStreak = document.getElementById('challenge-streak');
     els.challengeBest = document.getElementById('challenge-best');
+    els.challengeRank = document.getElementById('challenge-rank');
     els.challengeTierLabel = document.getElementById('challenge-tier-label');
     els.challengeObjective = document.getElementById('challenge-objective');
     els.timerBarFill = document.getElementById('timer-bar-fill');
     els.challengeGameover = document.getElementById('challenge-gameover');
     els.gameoverScore = document.getElementById('gameover-score');
+    els.gameoverRank = document.getElementById('gameover-rank');
     els.gameoverBest = document.getElementById('gameover-best');
+    els.gameoverBestRank = document.getElementById('gameover-best-rank');
     els.challengeRestartBtn = document.getElementById('challenge-restart-btn');
     els.challengeToLearnBtn = document.getElementById('challenge-to-learn-btn');
+    els.allLevelsBanner = document.getElementById('all-levels-banner');
+    els.gotoChallengeBtn = document.getElementById('goto-challenge-btn');
+  }
+
+  function rankText(score) {
+    const r = TA.rankForScore(score);
+    return `${r.icon} ${r.title}`;
   }
 
   function renderSidebar() {
@@ -163,6 +174,7 @@ window.TA = window.TA || {};
     const pct = Math.round((state.completed.size / LEVELS.length) * 100);
     els.progressFill.style.width = `${pct}%`;
     els.progressLabel.textContent = `${state.completed.size} / ${LEVELS.length} niveles completados`;
+    els.allLevelsBanner.style.display = state.completed.size === LEVELS.length ? '' : 'none';
   }
 
   function promptText() {
@@ -404,6 +416,7 @@ window.TA = window.TA || {};
     els.challengeScore.textContent = c.score;
     els.challengeStreak.textContent = c.streak;
     els.challengeBest.textContent = c.best;
+    els.challengeRank.textContent = rankText(c.score);
   }
 
   function updateTimerBar() {
@@ -440,6 +453,7 @@ window.TA = window.TA || {};
     c.score = 0;
     c.streak = 0;
     c.best = loadBest();
+    els.challengeRank.textContent = rankText(0);
     c.queue = TA.shuffleChallenges(CHALLENGES.map((_, i) => i));
     c.queuePos = 0;
     els.challengeIntro.style.display = 'none';
@@ -540,7 +554,9 @@ window.TA = window.TA || {};
     els.challengePanel.style.display = 'none';
     els.challengeGameover.style.display = '';
     els.gameoverScore.textContent = c.score;
+    els.gameoverRank.textContent = rankText(c.score);
     els.gameoverBest.textContent = best;
+    els.gameoverBestRank.textContent = rankText(best);
   }
 
   function runChallengeCommandLine(raw) {
@@ -634,7 +650,9 @@ window.TA = window.TA || {};
       } else {
         els.challengePanel.style.display = 'none';
         els.challengeIntro.style.display = '';
-        els.challengeBestIntro.textContent = loadBest();
+        const best = loadBest();
+        els.challengeBestIntro.textContent = best;
+        els.challengeRankIntro.textContent = rankText(best);
       }
     }
     els.input.value = '';
@@ -695,6 +713,7 @@ window.TA = window.TA || {};
     els.challengeStartBtn.addEventListener('click', startChallengeRun);
     els.challengeRestartBtn.addEventListener('click', startChallengeRun);
     els.challengeToLearnBtn.addEventListener('click', () => switchMode('learn'));
+    els.gotoChallengeBtn.addEventListener('click', () => switchMode('challenge'));
 
     els.commandChips.addEventListener('click', (e) => {
       if (e.target.classList.contains('chip')) {
