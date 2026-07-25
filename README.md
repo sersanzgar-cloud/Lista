@@ -6,6 +6,14 @@ de archivos virtual, permisos reales (lectura/escritura/ejecución, propietarios
 `sudo`), procesos, variables de entorno y red. Cada nivel plantea un objetivo y se
 completa automáticamente al ejecutar los comandos correctos.
 
+Tiene dos modos, con pestañas para cambiar entre ellos:
+- **📘 Aprender:** los niveles descritos abajo, sin límite de tiempo.
+- **⚡ Desafío:** retos de terminal contrarreloj sobre la misma terminal real (no es
+  un examen tipo test). Se te da un objetivo y tienes que escribir el comando correcto
+  antes de que se acabe el tiempo. Empiezas con 3 vidas; cada vez que se agota el
+  tiempo de un reto pierdes una vida, y la partida termina al llegar a 0. Cuanto más
+  rápido aciertas, más puntos ganas; la mejor puntuación se guarda en el navegador.
+
 43 niveles (0-42) en seis bloques:
 - **Nivel 0 (introducción):** qué es una terminal, qué es Linux, cómo leer el prompt
   — sin dar nada por sabido, para quien nunca ha visto una terminal.
@@ -53,5 +61,8 @@ El progreso se guarda en el `localStorage` del navegador.
   y un intérprete real de bloques `for`/`if` para scripts.
 - `src/levels.js` — definición de los 43 niveles (historia, objetivo, pistas y
   validación).
-- `src/game.js` — controlador de la interfaz: terminal, progreso, pistas, barra táctil.
+- `src/challenges.js` — pool de retos del Modo Desafío, agrupados por dificultad
+  (fácil, medio, difícil) con su tiempo límite y puntuación base.
+- `src/game.js` — controlador de la interfaz: terminal, progreso, pistas, barra táctil,
+  y el estado/temporizador/vidas/puntuación del Modo Desafío.
 - `manifest.json` / `service-worker.js` / `icons/` — PWA instalable en Android.

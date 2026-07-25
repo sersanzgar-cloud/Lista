@@ -3,10 +3,13 @@ window.TA = window.TA || {};
 
 (function () {
   const STORAGE_KEY = 'terminal-academy-progress-v1';
+  const BEST_KEY = 'terminal-academy-best-v1';
   const LEVELS = TA.LEVELS;
+  const CHALLENGES = TA.CHALLENGES;
 
   const els = {};
   let state = {
+    mode: 'learn',
     levelIndex: 0,
     completed: new Set(),
     vfs: null,
@@ -30,7 +33,56 @@ window.TA = window.TA || {};
     mounts: [],
     openFiles: [],
     aliases: {},
+    challenge: {
+      active: false,
+      queue: [],
+      queuePos: 0,
+      current: null,
+      resolved: false,
+      vfs: null,
+      cwd: [],
+      history: [],
+      visited: new Set(),
+      inputHistory: [],
+      inputPointer: 0,
+      env: {},
+      processes: [],
+      jobs: [],
+      network: { routes: {}, hosts: {}, ports: [] },
+      umask: '022',
+      packages: { installed: [], available: [] },
+      services: [],
+      users: [],
+      groups: [],
+      firewall: { enabled: false, rules: [] },
+      mounts: [],
+      openFiles: [],
+      aliases: {},
+      lives: 3,
+      score: 0,
+      streak: 0,
+      best: 0,
+      timeLimit: 0,
+      timeLeft: 0,
+      timerHandle: null,
+    },
   };
+
+  function activeState() {
+    return state.mode === 'challenge' ? state.challenge : state;
+  }
+
+  function loadBest() {
+    try {
+      return Number(localStorage.getItem(BEST_KEY)) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function saveBest(score) {
+    localStorage.setItem(BEST_KEY, String(score));
+  }
 
   function loadProgress() {
     try {
@@ -51,7 +103,11 @@ window.TA = window.TA || {};
   }
 
   function cacheEls() {
+    els.appMain = document.querySelector('.app-main');
+    els.tabLearn = document.getElementById('tab-learn');
+    els.tabChallenge = document.getElementById('tab-challenge');
     els.sidebar = document.getElementById('level-list');
+    els.learnPanel = document.getElementById('learn-panel');
     els.title = document.getElementById('level-title');
     els.story = document.getElementById('level-story');
     els.objective = document.getElementById('level-objective');
@@ -67,6 +123,23 @@ window.TA = window.TA || {};
     els.successBanner = document.getElementById('success-banner');
     els.nextBtn = document.getElementById('next-level-btn');
     els.mobileToolbar = document.getElementById('mobile-toolbar');
+
+    els.challengeIntro = document.getElementById('challenge-intro');
+    els.challengeBestIntro = document.getElementById('challenge-best-intro');
+    els.challengeStartBtn = document.getElementById('challenge-start-btn');
+    els.challengePanel = document.getElementById('challenge-panel');
+    els.challengeLives = document.getElementById('challenge-lives');
+    els.challengeScore = document.getElementById('challenge-score');
+    els.challengeStreak = document.getElementById('challenge-streak');
+    els.challengeBest = document.getElementById('challenge-best');
+    els.challengeTierLabel = document.getElementById('challenge-tier-label');
+    els.challengeObjective = document.getElementById('challenge-objective');
+    els.timerBarFill = document.getElementById('timer-bar-fill');
+    els.challengeGameover = document.getElementById('challenge-gameover');
+    els.gameoverScore = document.getElementById('gameover-score');
+    els.gameoverBest = document.getElementById('gameover-best');
+    els.challengeRestartBtn = document.getElementById('challenge-restart-btn');
+    els.challengeToLearnBtn = document.getElementById('challenge-to-learn-btn');
   }
 
   function renderSidebar() {
@@ -93,7 +166,8 @@ window.TA = window.TA || {};
   }
 
   function promptText() {
-    const cwdStr = state.vfs.pathToStr(state.cwd);
+    const s = activeState();
+    const cwdStr = s.vfs.pathToStr(s.cwd);
     const short = cwdStr.replace(/^\/home\/jugador/, '~');
     return `jugador@academia:${short}$`;
   }
@@ -168,29 +242,33 @@ window.TA = window.TA || {};
     renderSidebar();
   }
 
-  function buildExecCtx() {
+  function buildExecCtxFor(s) {
     return {
-      vfs: state.vfs,
-      getCwd: () => state.cwd,
-      setCwd: (arr) => { state.cwd = arr; },
-      env: state.env,
+      vfs: s.vfs,
+      getCwd: () => s.cwd,
+      setCwd: (arr) => { s.cwd = arr; },
+      env: s.env,
       currentUser: 'jugador',
       userGroups: ['jugador', 'sudo'],
       sudo: false,
-      processes: state.processes,
-      jobs: state.jobs,
-      network: state.network,
-      getUmask: () => state.umask,
-      setUmask: (val) => { state.umask = val; },
-      packages: state.packages,
-      services: state.services,
-      users: state.users,
-      groups: state.groups,
-      firewall: state.firewall,
-      mounts: state.mounts,
-      openFiles: state.openFiles,
-      aliases: state.aliases,
+      processes: s.processes,
+      jobs: s.jobs,
+      network: s.network,
+      getUmask: () => s.umask,
+      setUmask: (val) => { s.umask = val; },
+      packages: s.packages,
+      services: s.services,
+      users: s.users,
+      groups: s.groups,
+      firewall: s.firewall,
+      mounts: s.mounts,
+      openFiles: s.openFiles,
+      aliases: s.aliases,
     };
+  }
+
+  function buildExecCtx() {
+    return buildExecCtxFor(activeState());
   }
 
   function markComplete() {
@@ -274,6 +352,7 @@ window.TA = window.TA || {};
   }
 
   function completeInput() {
+    const s = activeState();
     const raw = els.input.value;
     const endsWithSpace = raw.length === 0 || /\s$/.test(raw);
     const tokens = TA.Shell.tokenize(raw);
@@ -290,8 +369,8 @@ window.TA = window.TA || {};
       const slashIdx = currentToken.lastIndexOf('/');
       const dirPart = slashIdx === -1 ? '' : currentToken.slice(0, slashIdx + 1);
       const filePrefix = slashIdx === -1 ? currentToken : currentToken.slice(slashIdx + 1);
-      const dirPath = state.vfs.normalize(dirPart || '.', state.cwd);
-      const dirNode = state.vfs.getNode(dirPath);
+      const dirPath = s.vfs.normalize(dirPart || '.', s.cwd);
+      const dirNode = s.vfs.getNode(dirPath);
       if (dirNode && dirNode.type === 'dir') {
         candidates = Object.keys(dirNode.children)
           .filter((n) => n.startsWith(filePrefix))
@@ -313,19 +392,267 @@ window.TA = window.TA || {};
   function submitInput() {
     const val = els.input.value;
     els.input.value = '';
-    runCommandLine(val);
+    if (state.mode === 'challenge') runChallengeCommandLine(val);
+    else runCommandLine(val);
+  }
+
+  // --- Modo Desafío ---
+
+  function updateStatsUI() {
+    const c = state.challenge;
+    els.challengeLives.textContent = '❤️'.repeat(Math.max(0, c.lives)) + '🖤'.repeat(Math.max(0, 3 - c.lives));
+    els.challengeScore.textContent = c.score;
+    els.challengeStreak.textContent = c.streak;
+    els.challengeBest.textContent = c.best;
+  }
+
+  function updateTimerBar() {
+    const c = state.challenge;
+    const pct = c.timeLimit > 0 ? Math.max(0, Math.min(100, (c.timeLeft / c.timeLimit) * 100)) : 0;
+    els.timerBarFill.style.width = `${pct}%`;
+    els.timerBarFill.classList.toggle('warn', pct <= 50 && pct > 20);
+    els.timerBarFill.classList.toggle('danger', pct <= 20);
+  }
+
+  function stopTimer() {
+    const c = state.challenge;
+    if (c.timerHandle) {
+      clearInterval(c.timerHandle);
+      c.timerHandle = null;
+    }
+  }
+
+  function startTimer() {
+    const c = state.challenge;
+    stopTimer();
+    c.timerHandle = setInterval(() => {
+      if (state.mode !== 'challenge' || !c.active || c.resolved) return;
+      c.timeLeft = Math.max(0, c.timeLeft - 0.1);
+      updateTimerBar();
+      if (c.timeLeft <= 0) onChallengeFail();
+    }, 100);
+  }
+
+  function startChallengeRun() {
+    const c = state.challenge;
+    c.active = true;
+    c.lives = 3;
+    c.score = 0;
+    c.streak = 0;
+    c.best = loadBest();
+    c.queue = TA.shuffleChallenges(CHALLENGES.map((_, i) => i));
+    c.queuePos = 0;
+    els.challengeIntro.style.display = 'none';
+    els.challengeGameover.style.display = 'none';
+    els.challengePanel.style.display = '';
+    updateStatsUI();
+    loadChallenge();
+  }
+
+  function loadChallenge() {
+    const c = state.challenge;
+    if (c.queuePos >= c.queue.length) {
+      c.queue = TA.shuffleChallenges(CHALLENGES.map((_, i) => i));
+      c.queuePos = 0;
+    }
+    const def = CHALLENGES[c.queue[c.queuePos]];
+    const tier = TA.CHALLENGE_TIERS[def.tier];
+    c.current = def;
+    c.resolved = false;
+    c.vfs = new TA.VFS(def.createFs());
+    c.cwd = [...def.startCwd];
+    c.env = def.createEnv ? def.createEnv() : {};
+    c.processes = def.createProcesses ? def.createProcesses() : [];
+    c.jobs = [];
+    c.network = def.createNetwork ? def.createNetwork() : { routes: {}, hosts: {}, ports: [] };
+    c.umask = def.initialUmask || '022';
+    c.packages = def.createPackages ? def.createPackages() : { installed: [], available: [] };
+    c.services = def.createServices ? def.createServices() : [];
+    c.users = def.createUsers ? def.createUsers() : [];
+    c.groups = def.createGroups ? def.createGroups() : [];
+    c.firewall = def.createFirewall ? def.createFirewall() : { enabled: false, rules: [] };
+    c.mounts = def.createMounts ? def.createMounts() : [];
+    c.openFiles = def.createOpenFiles ? def.createOpenFiles() : [];
+    c.aliases = def.createAliases ? def.createAliases() : {};
+    c.history = [];
+    c.visited = new Set();
+    c.inputHistory = [];
+    c.inputPointer = 0;
+    c.timeLimit = tier.timeLimit;
+    c.timeLeft = tier.timeLimit;
+
+    els.challengeTierLabel.textContent = `🎯 Reto (${tier.label})`;
+    els.challengeObjective.textContent = def.objective;
+    updateTimerBar();
+    updateStatsUI();
+
+    els.output.innerHTML = '';
+    printLine(`--- Reto: ${tier.label} ---`, 'term-meta');
+    printLine(def.objective, 'term-meta');
+    els.prompt.textContent = promptText();
+    els.input.value = '';
+    if (state.mode === 'challenge') els.input.focus();
+
+    startTimer();
+  }
+
+  function onChallengeSuccess() {
+    const c = state.challenge;
+    if (c.resolved) return;
+    c.resolved = true;
+    stopTimer();
+    const tier = TA.CHALLENGE_TIERS[c.current.tier];
+    const speedBonus = Math.round((c.timeLeft / c.timeLimit) * tier.points * 0.5);
+    const points = tier.points + speedBonus;
+    c.score += points;
+    c.streak += 1;
+    updateStatsUI();
+    printLine(`✅ ¡Correcto! +${points} puntos (racha ${c.streak})`, 'term-explain');
+    c.queuePos += 1;
+    setTimeout(() => { if (state.challenge.active) loadChallenge(); }, 900);
+  }
+
+  function onChallengeFail() {
+    const c = state.challenge;
+    if (c.resolved) return;
+    c.resolved = true;
+    stopTimer();
+    c.lives -= 1;
+    c.streak = 0;
+    updateStatsUI();
+    printLine('⏱️ ¡Se acabó el tiempo!', 'term-error');
+    printLine(`💡 Una solución válida era: ${c.current.solution}`, 'term-explain');
+    c.queuePos += 1;
+    if (c.lives <= 0) {
+      setTimeout(() => gameOver(), 1200);
+    } else {
+      setTimeout(() => { if (state.challenge.active) loadChallenge(); }, 1600);
+    }
+  }
+
+  function gameOver() {
+    const c = state.challenge;
+    c.active = false;
+    stopTimer();
+    const best = Math.max(c.best, c.score);
+    c.best = best;
+    saveBest(best);
+    els.challengePanel.style.display = 'none';
+    els.challengeGameover.style.display = '';
+    els.gameoverScore.textContent = c.score;
+    els.gameoverBest.textContent = best;
+  }
+
+  function runChallengeCommandLine(raw) {
+    const trimmed = raw.trim();
+    if (trimmed === '') return;
+    const c = state.challenge;
+
+    printLine(`${promptText()} ${raw}`, 'term-input-echo');
+    c.inputHistory.push(raw);
+    c.inputPointer = c.inputHistory.length;
+
+    if (trimmed === 'clear') {
+      handleClear();
+      return;
+    }
+    if (!c.active || !c.current || c.resolved) return;
+
+    const ctx = buildExecCtx();
+    const result = TA.Shell.runLine(trimmed, ctx);
+
+    for (const stage of result.stages) {
+      c.history.push({ ...stage, raw: trimmed });
+      if (stage.cmd === 'cd' && !stage.error) {
+        c.visited.add(c.vfs.pathToStr(c.cwd));
+      }
+    }
+
+    if (!result.ok) {
+      printBlock(result.output, 'term-error');
+      printExplain(result.explain);
+    } else {
+      printBlock(result.output, 'term-output');
+    }
+
+    els.prompt.textContent = promptText();
+
+    const passed = c.current.check({
+      vfs: c.vfs,
+      cwd: c.cwd,
+      history: c.history,
+      visited: c.visited,
+      env: c.env,
+      processes: c.processes,
+      jobs: c.jobs,
+      network: c.network,
+      umask: c.umask,
+      packages: c.packages,
+      services: c.services,
+      users: c.users,
+      groups: c.groups,
+      firewall: c.firewall,
+      mounts: c.mounts,
+      openFiles: c.openFiles,
+      aliases: c.aliases,
+    });
+    if (passed) onChallengeSuccess();
+  }
+
+  function switchMode(mode) {
+    if (state.mode === mode) return;
+    state.mode = mode;
+    els.tabLearn.classList.toggle('active', mode === 'learn');
+    els.tabChallenge.classList.toggle('active', mode === 'challenge');
+    els.appMain.classList.toggle('challenge-mode', mode === 'challenge');
+
+    if (mode === 'learn') {
+      stopTimer();
+      els.learnPanel.style.display = '';
+      els.challengeIntro.style.display = 'none';
+      els.challengePanel.style.display = 'none';
+      els.challengeGameover.style.display = 'none';
+      els.output.innerHTML = '';
+      const level = LEVELS[state.levelIndex];
+      printLine(`--- ${level.title} ---`, 'term-meta');
+      printLine(level.story, 'term-meta');
+      printLine('Escribe "help" para ver los comandos disponibles. Tab autocompleta, Ctrl+L limpia la pantalla.', 'term-meta');
+      els.prompt.textContent = promptText();
+    } else {
+      els.learnPanel.style.display = 'none';
+      els.challengeGameover.style.display = 'none';
+      const c = state.challenge;
+      if (c.active && c.current) {
+        els.challengeIntro.style.display = 'none';
+        els.challengePanel.style.display = '';
+        els.output.innerHTML = '';
+        const tier = TA.CHALLENGE_TIERS[c.current.tier];
+        printLine(`--- Reto: ${tier.label} ---`, 'term-meta');
+        printLine(c.current.objective, 'term-meta');
+        els.prompt.textContent = promptText();
+        if (!c.resolved) startTimer();
+      } else {
+        els.challengePanel.style.display = 'none';
+        els.challengeIntro.style.display = '';
+        els.challengeBestIntro.textContent = loadBest();
+      }
+    }
+    els.input.value = '';
+    els.input.focus();
   }
 
   function historyBack() {
-    if (state.inputHistory.length === 0) return;
-    state.inputPointer = Math.max(0, state.inputPointer - 1);
-    els.input.value = state.inputHistory[state.inputPointer] || '';
+    const s = activeState();
+    if (s.inputHistory.length === 0) return;
+    s.inputPointer = Math.max(0, s.inputPointer - 1);
+    els.input.value = s.inputHistory[s.inputPointer] || '';
   }
 
   function historyForward() {
-    if (state.inputHistory.length === 0) return;
-    state.inputPointer = Math.min(state.inputHistory.length, state.inputPointer + 1);
-    els.input.value = state.inputHistory[state.inputPointer] || '';
+    const s = activeState();
+    if (s.inputHistory.length === 0) return;
+    s.inputPointer = Math.min(s.inputHistory.length, s.inputPointer + 1);
+    els.input.value = s.inputHistory[s.inputPointer] || '';
   }
 
   function insertAtCursor(text) {
@@ -362,6 +689,12 @@ window.TA = window.TA || {};
     els.nextBtn.addEventListener('click', () => {
       if (state.levelIndex < LEVELS.length - 1) loadLevel(state.levelIndex + 1);
     });
+
+    els.tabLearn.addEventListener('click', () => switchMode('learn'));
+    els.tabChallenge.addEventListener('click', () => switchMode('challenge'));
+    els.challengeStartBtn.addEventListener('click', startChallengeRun);
+    els.challengeRestartBtn.addEventListener('click', startChallengeRun);
+    els.challengeToLearnBtn.addEventListener('click', () => switchMode('learn'));
 
     els.commandChips.addEventListener('click', (e) => {
       if (e.target.classList.contains('chip')) {
@@ -406,6 +739,7 @@ window.TA = window.TA || {};
   function init() {
     cacheEls();
     state.completed = loadProgress();
+    state.challenge.best = loadBest();
     bindEvents();
     const firstUnfinished = LEVELS.findIndex((_, i) => !state.completed.has(i));
     loadLevel(firstUnfinished === -1 ? LEVELS.length - 1 : firstUnfinished);

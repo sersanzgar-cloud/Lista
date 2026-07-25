@@ -31,14 +31,19 @@
     </div>
   </header>
 
+  <nav class="mode-tabs">
+    <button id="tab-learn" class="mode-tab active" data-mode="learn">📘 Aprender</button>
+    <button id="tab-challenge" class="mode-tab" data-mode="challenge">⚡ Desafío</button>
+  </nav>
+
   <main class="app-main">
-    <aside class="sidebar">
+    <aside id="learn-sidebar" class="sidebar">
       <h2>Niveles</h2>
       <ul id="level-list" class="level-list"></ul>
     </aside>
 
     <section class="content">
-      <div class="level-panel">
+      <div id="learn-panel" class="level-panel">
         <h2 id="level-title">Nivel</h2>
         <p id="level-story" class="level-story"></p>
         <p class="objective-label">🎯 Objetivo</p>
@@ -52,6 +57,37 @@
         <div id="success-banner" class="success-banner">
           ✅ ¡Nivel completado!
           <button id="next-level-btn" class="btn btn-primary">Siguiente nivel →</button>
+        </div>
+      </div>
+
+      <div id="challenge-intro" class="level-panel challenge-intro" style="display:none;">
+        <h2>⚡ Modo Desafío</h2>
+        <p class="level-story">Retos de terminal contrarreloj. Se te da un objetivo y tienes que escribir el
+          comando correcto antes de que se acabe el tiempo. Empiezas con 3 vidas: cada fallo o cada
+          tiempo agotado te cuesta una vida. Cuanto más rápido aciertes, más puntos ganas.</p>
+        <p class="challenge-best">🏆 Mejor puntuación: <span id="challenge-best-intro">0</span></p>
+        <button id="challenge-start-btn" class="btn btn-primary">▶ Empezar desafío</button>
+      </div>
+
+      <div id="challenge-panel" class="level-panel challenge-panel" style="display:none;">
+        <div class="challenge-stats">
+          <span id="challenge-lives" class="challenge-stat">❤️❤️❤️</span>
+          <span class="challenge-stat">⭐ <span id="challenge-score">0</span></span>
+          <span class="challenge-stat">🔥 <span id="challenge-streak">0</span></span>
+          <span class="challenge-stat">🏆 <span id="challenge-best">0</span></span>
+        </div>
+        <p class="objective-label" id="challenge-tier-label">🎯 Reto</p>
+        <p id="challenge-objective" class="level-objective"></p>
+        <div class="timer-bar-outer"><div id="timer-bar-fill" class="timer-bar-fill"></div></div>
+      </div>
+
+      <div id="challenge-gameover" class="level-panel challenge-gameover" style="display:none;">
+        <h2>💀 ¡Fin del desafío!</h2>
+        <p>Puntuación final: <strong id="gameover-score">0</strong></p>
+        <p>Mejor puntuación: <strong id="gameover-best">0</strong></p>
+        <div class="level-actions">
+          <button id="challenge-restart-btn" class="btn btn-primary">↺ Volver a intentarlo</button>
+          <button id="challenge-to-learn-btn" class="btn btn-secondary">📘 Ir a Aprender</button>
         </div>
       </div>
 
@@ -88,6 +124,7 @@
   <script src="src/vfs.js"></script>
   <script src="src/shell.js"></script>
   <script src="src/levels.js"></script>
+  <script src="src/challenges.js"></script>
   <script src="src/game.js"></script>
   <script>
     if ('serviceWorker' in navigator) {

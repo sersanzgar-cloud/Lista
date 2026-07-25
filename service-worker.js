@@ -1,4 +1,4 @@
-const CACHE_NAME = 'terminal-academy-v1';
+const CACHE_NAME = 'terminal-academy-v2';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const CORE_ASSETS = [
   './src/vfs.js',
   './src/shell.js',
   './src/levels.js',
+  './src/challenges.js',
   './src/game.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
