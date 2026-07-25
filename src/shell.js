@@ -11,48 +11,70 @@ window.TA = window.TA || {};
     return { output: '', error, explain: explain || null };
   }
 
-  // Cada token es { text, quote } donde quote es 'single' | 'double' | null (sin comillas).
-  // Las comillas simples, como en bash real, impiden la expansión de variables ($VAR).
+  // Cada token es { parts: [{ text, quote }, ...] }. Igual que en bash real, trozos con y
+  // sin comillas pegados sin espacio (p. ej. ll='ls -la') forman UNA sola palabra/token,
+  // y cada trozo conserva si estaba entre comillas simples (que impiden expandir $VAR).
   function tokenize(line) {
     const tokens = [];
+    let current = null;
+    const flush = () => { if (current) { tokens.push(current); current = null; } };
     let i = 0;
     const n = line.length;
     while (i < n) {
       const c = line[i];
-      if (c === ' ' || c === '\t') { i++; continue; }
+      if (c === ' ' || c === '\t') { flush(); i++; continue; }
       if (c === '"' || c === "'") {
         const quoteChar = c;
         let j = i + 1;
         let buf = '';
         while (j < n && line[j] !== quoteChar) { buf += line[j]; j++; }
-        tokens.push({ text: buf, quote: quoteChar === "'" ? 'single' : 'double' });
+        if (!current) current = { parts: [] };
+        current.parts.push({ text: buf, quote: quoteChar === "'" ? 'single' : 'double' });
         i = j + 1;
         continue;
       }
-      if (c === '|') { tokens.push({ text: '|', quote: null }); i++; continue; }
+      if (c === '|') { flush(); tokens.push({ parts: [{ text: '|', quote: null }] }); i++; continue; }
       if (c === '>') {
-        if (line[i + 1] === '>') { tokens.push({ text: '>>', quote: null }); i += 2; }
-        else { tokens.push({ text: '>', quote: null }); i++; }
+        flush();
+        if (line[i + 1] === '>') { tokens.push({ parts: [{ text: '>>', quote: null }] }); i += 2; }
+        else { tokens.push({ parts: [{ text: '>', quote: null }] }); i++; }
         continue;
       }
       let j = i;
       let buf = '';
       while (j < n && !' \t|>"\''.includes(line[j])) { buf += line[j]; j++; }
-      tokens.push({ text: buf, quote: null });
+      if (!current) current = { parts: [] };
+      current.parts.push({ text: buf, quote: null });
       i = j;
     }
+    flush();
     return tokens;
+  }
+
+  // Texto crudo (sin expandir) de un token, concatenando todas sus partes.
+  function tokenRawText(tok) {
+    return tok.parts.map((p) => p.text).join('');
+  }
+  // Si el token es una única palabra SIN comillas, devuelve su texto; si no, null.
+  // Se usa para reconocer palabras clave (sudo, nohup, |, >, alias) — igual que bash,
+  // solo cuentan si no están citadas ni pegadas a otra cosa.
+  function bareText(tok) {
+    return (tok.parts.length === 1 && tok.parts[0].quote === null) ? tok.parts[0].text : null;
   }
 
   function sizeOf(node) {
     if (node.type === 'file') return node.content.length;
+    if (node.type === 'symlink') return (node.target || '').length;
     return 4096;
   }
 
   function formatLongEntry(name, node) {
-    const typeChar = node.type === 'dir' ? 'd' : '-';
+    const typeChar = node.type === 'dir' ? 'd' : node.type === 'symlink' ? 'l' : '-';
     const size = String(sizeOf(node)).padStart(5, ' ');
-    return `${typeChar}${node.perms} 1 ${node.owner} ${node.group} ${size} ${name}${node.type === 'dir' ? '/' : ''}`;
+    const displayName = node.type === 'symlink'
+      ? `${name} -> ${node.target}`
+      : `${name}${node.type === 'dir' ? '/' : ''}`;
+    return `${typeChar}${node.perms} 1 ${node.owner} ${node.group} ${size} ${displayName}`;
   }
 
   // Soporta tanto "-d:" (valor pegado) como "-d" ":" (valor separado), como el cut/awk reales.
@@ -103,10 +125,10 @@ window.TA = window.TA || {};
     });
   }
 
-  // Resuelve un token tokenizado a su valor final de cadena: expande $VAR salvo si
-  // estaba entre comillas simples, igual que en bash real.
+  // Resuelve un token tokenizado a su valor final de cadena: expande $VAR en cada trozo
+  // salvo en los que estaban entre comillas simples, igual que en bash real.
   function resolveToken(tok, ctx) {
-    return tok.quote === 'single' ? tok.text : expandVars(tok.text, ctx);
+    return tok.parts.map((p) => (p.quote === 'single' ? p.text : expandVars(p.text, ctx))).join('');
   }
 
   // --- Procesos / trabajos en segundo plano ---
@@ -293,6 +315,34 @@ window.TA = window.TA || {};
     return null;
   }
 
+  // --- Páginas de manual (man / whatis / apropos) ---
+
+  const MAN_PAGES = {
+    pwd: { name: 'muestra el nombre del directorio de trabajo actual', synopsis: 'pwd' },
+    ls: { name: 'lista el contenido de directorios', synopsis: 'ls [-l] [-a] [ruta]' },
+    cd: { name: 'cambia el directorio de trabajo', synopsis: 'cd [directorio]' },
+    cat: { name: 'concatena y muestra archivos', synopsis: 'cat [archivo...]' },
+    echo: { name: 'muestra una línea de texto', synopsis: 'echo [texto...]' },
+    mkdir: { name: 'crea directorios', synopsis: 'mkdir [-p] directorio...' },
+    rm: { name: 'elimina archivos o directorios', synopsis: 'rm [-r] [-f] archivo...' },
+    cp: { name: 'copia archivos y directorios', synopsis: 'cp [-r] origen destino' },
+    mv: { name: 'mueve o renombra archivos y directorios', synopsis: 'mv origen destino' },
+    grep: { name: 'busca patrones de texto', synopsis: 'grep [-i] patrón [archivo...]' },
+    find: { name: 'busca archivos en una jerarquía de directorios', synopsis: 'find ruta -name patrón' },
+    chmod: { name: 'cambia los permisos de un archivo', synopsis: 'chmod modo archivo...' },
+    chown: { name: 'cambia el propietario y grupo de un archivo', synopsis: 'chown propietario[:grupo] archivo...' },
+    ln: { name: 'crea enlaces entre archivos', synopsis: 'ln [-s] origen enlace' },
+    tar: { name: 'archiva y comprime/extrae ficheros', synopsis: 'tar [-c|-x][-z][-f] archivo.tar[.gz] [ruta]' },
+    ps: { name: 'muestra los procesos en ejecución', synopsis: 'ps [aux]' },
+    kill: { name: 'termina procesos por su PID', synopsis: 'kill [-9] pid' },
+    ssh: { name: 'cliente seguro de conexión remota', synopsis: 'ssh usuario@host' },
+    sudo: { name: 'ejecuta un comando como superusuario', synopsis: 'sudo comando' },
+    git: { name: 'sistema de control de versiones', synopsis: 'git <init|add|commit|status|log> ...' },
+    rsync: { name: 'sincroniza archivos y directorios de forma eficiente', synopsis: 'rsync [-av] origen destino' },
+    mount: { name: 'monta un sistema de archivos', synopsis: 'mount dispositivo punto_de_montaje' },
+    ping: { name: 'comprueba la conectividad con un host', synopsis: 'ping host' },
+  };
+
   // --- Comandos ---
 
   const COMMANDS = {
@@ -307,6 +357,10 @@ window.TA = window.TA || {};
       const targets = args.filter((a) => !a.startsWith('-'));
       const targetRaw = targets[0] || '.';
       const pathArr = ctx.vfs.normalize(targetRaw, ctx.getCwd());
+      const rawNode = ctx.vfs.getNodeNoFollow(pathArr);
+      if (long && rawNode && rawNode.type === 'symlink') {
+        return ok(formatLongEntry(targetRaw.split('/').filter(Boolean).pop() || targetRaw, rawNode));
+      }
       const node = ctx.vfs.getNode(pathArr);
       if (!node) {
         return fail(
@@ -466,7 +520,7 @@ window.TA = window.TA || {};
       }
       for (const t of targets) {
         const pathArr = ctx.vfs.normalize(t, ctx.getCwd());
-        const node = ctx.vfs.getNode(pathArr);
+        const node = ctx.vfs.getNodeNoFollow(pathArr);
         if (!node) {
           if (force) continue;
           return fail(
@@ -1075,6 +1129,273 @@ window.TA = window.TA || {};
       );
     },
 
+    ln(args, stdin, ctx) {
+      const symbolic = args.includes('-s');
+      const targets = args.filter((a) => !a.startsWith('-'));
+      if (targets.length < 2) {
+        return fail('ln: se requieren un origen y un destino', 'Indica el origen y el nombre del enlace, por ejemplo: ln -s origen.txt enlace');
+      }
+      const [srcRaw, linkRaw] = targets;
+      const linkPath = ctx.vfs.normalize(linkRaw, ctx.getCwd());
+      const { parent, name } = ctx.vfs.getParent(linkPath);
+      if (!parent || parent.type !== 'dir') {
+        return fail('ln: no existe el directorio destino', `La carpeta donde quieres crear "${linkRaw}" no existe.`);
+      }
+      if (parent.children[name]) {
+        return fail(`ln: no se puede crear el enlace '${linkRaw}': Ya existe`, `Ya existe algo con el nombre "${linkRaw}" aquí. Elige otro nombre.`);
+      }
+      const denied = checkPerm(parent, 'w', ctx, 'ln', linkRaw);
+      if (denied) return denied;
+      if (symbolic) {
+        parent.children[name] = TA.vfsHelpers.symlink(srcRaw, ctx.currentUser);
+        return ok('');
+      }
+      const srcPath = ctx.vfs.normalize(srcRaw, ctx.getCwd());
+      const srcNode = ctx.vfs.getNode(srcPath);
+      if (!srcNode) {
+        return fail(`ln: no se puede acceder a '${srcRaw}': No existe`, `No existe ningún archivo llamado "${srcRaw}" aquí. Comprueba el nombre con "ls".`);
+      }
+      if (srcNode.type === 'dir') {
+        return fail(`ln: '${srcRaw}': Es un directorio`, 'No se pueden crear enlaces duros (sin -s) a directorios; usa un enlace simbólico: ln -s ' + srcRaw + ' ' + linkRaw);
+      }
+      parent.children[name] = srcNode; // misma referencia: enlace duro real (comparte contenido).
+      return ok('');
+    },
+
+    man(args, stdin, ctx) {
+      const cmd = args[0];
+      if (!cmd) return fail('¿Qué página de manual quieres?', 'Indica un comando, por ejemplo: man ls');
+      const entry = MAN_PAGES[cmd];
+      if (!entry) {
+        return fail(`No existe entrada de manual para ${cmd}`, `Este simulador no tiene una página de manual para "${cmd}". Prueba "help" para ver la lista de comandos.`);
+      }
+      return ok(`NOMBRE\n    ${cmd} — ${entry.name}\n\nSINOPSIS\n    ${entry.synopsis}\n\nDESCRIPCIÓN\n    ${entry.description || entry.name.charAt(0).toUpperCase() + entry.name.slice(1) + '.'}`);
+    },
+
+    whatis(args, stdin, ctx) {
+      const cmd = args[0];
+      if (!cmd) return fail('whatis: falta el comando', 'Indica un comando, por ejemplo: whatis ls');
+      const entry = MAN_PAGES[cmd];
+      if (!entry) return fail(`${cmd}: nada apropiado`, `No hay documentación para "${cmd}" en este simulador.`);
+      return ok(`${cmd} (1)       - ${entry.name}`);
+    },
+
+    apropos(args, stdin, ctx) {
+      const term = args[0];
+      if (!term) return fail('apropos: falta la palabra clave', 'Indica qué buscar, por ejemplo: apropos copiar');
+      const matches = Object.entries(MAN_PAGES).filter(([k, v]) => k.includes(term) || v.name.toLowerCase().includes(term.toLowerCase()));
+      if (matches.length === 0) return ok(`${term}: nada apropiado`);
+      return ok(matches.map(([k, v]) => `${k} (1)       - ${v.name}`).join('\n'));
+    },
+
+    which(args, stdin, ctx) {
+      const cmd = args[0];
+      if (!cmd) return fail('which: falta el comando', 'Indica un comando, por ejemplo: which ls');
+      if (COMMANDS[cmd]) return ok(`/usr/bin/${cmd}`);
+      return fail(`which: no hay ${cmd} en (/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin)`, `"${cmd}" no es un comando de este simulador (ni está en el PATH).`);
+    },
+
+    whereis(args, stdin, ctx) {
+      const cmd = args[0];
+      if (!cmd) return fail('whereis: falta el comando', 'Indica un comando, por ejemplo: whereis ls');
+      if (COMMANDS[cmd]) return ok(`${cmd}: /usr/bin/${cmd} /usr/share/man/man1/${cmd}.1.gz`);
+      return ok(`${cmd}:`);
+    },
+
+    tac(args, stdin, ctx) {
+      let text = stdin || '';
+      const fileTargets = args.filter((a) => !a.startsWith('-'));
+      if (fileTargets.length > 0) {
+        const { node, error } = readFileArg(ctx, fileTargets[0], 'tac');
+        if (error) return error;
+        text = node.content;
+      }
+      return ok(text.split('\n').reverse().join('\n'));
+    },
+
+    more(args, stdin, ctx) {
+      return COMMANDS.cat(args, stdin, ctx);
+    },
+
+    less(args, stdin, ctx) {
+      return COMMANDS.cat(args, stdin, ctx);
+    },
+
+    pstree(args, stdin, ctx) {
+      const rows = activeProcessRows(ctx);
+      return ok('systemd-+-' + rows.map((r) => r.cmd).join('\n        |-'));
+    },
+
+    strace(args, stdin, ctx) {
+      if (args.length === 0) return fail('strace: falta el comando', 'Indica un comando a rastrear, por ejemplo: strace ls');
+      const [cmd, ...rest] = args;
+      const fn = COMMANDS[cmd];
+      if (!fn) return fail(`strace: No se puede ejecutar ${cmd}: No existe el archivo o directorio`, `"${cmd}" no es un comando de este simulador.`);
+      const result = fn(rest, stdin, ctx);
+      const fakeCalls = [
+        `execve("/usr/bin/${cmd}", [...]) = 0`,
+        'brk(NULL)                              = 0x55d4a2b000',
+        'openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY) = 3',
+      ];
+      const trailer = `+++ exited with ${result.error ? 1 : 0} +++`;
+      return ok([...fakeCalls, result.output, trailer].filter((l) => l !== '').join('\n'));
+    },
+
+    chage(args, stdin, ctx) {
+      const eIdx = args.indexOf('-E');
+      const date = eIdx !== -1 ? args[eIdx + 1] : null;
+      const username = args[args.length - 1];
+      if (!date || !username || username === '-E') {
+        return fail('chage: uso: chage -E FECHA usuario', 'Indica una fecha (AAAA-MM-DD) y un usuario, por ejemplo: sudo chage -E 2026-12-31 sofia');
+      }
+      if (!ctx.sudo) return fail('chage: Permission denied.', `Cambiar el plazo de una contraseña requiere privilegios de administrador: sudo chage -E ${date} ${username}`);
+      const user = ctx.users.find((u) => u.username === username);
+      if (!user) return fail(`chage: el usuario '${username}' no existe`, 'Comprueba el nombre de usuario, o créalo antes con useradd.');
+      user.expires = date;
+      return ok('');
+    },
+
+    xargs(args, stdin, ctx) {
+      const cmdName = args[0];
+      if (!cmdName) return fail('xargs: falta el comando', 'Indica qué comando ejecutar con cada línea de entrada, por ejemplo: find . -name "*.txt" | xargs cat');
+      const fn = COMMANDS[cmdName];
+      if (!fn) return fail(`xargs: ${cmdName}: No existe el archivo o directorio`, `"${cmdName}" no es un comando de este simulador.`);
+      const fixedArgs = args.slice(1);
+      const items = (stdin || '').split('\n').filter((l) => l.length > 0);
+      const out = [];
+      for (const item of items) {
+        const result = fn([...fixedArgs, item], '', ctx);
+        if (result.error) return result;
+        if (result.output) out.push(result.output);
+      }
+      return ok(out.join('\n'));
+    },
+
+    alias(args, stdin, ctx) {
+      if (args.length === 0) {
+        return ok(Object.entries(ctx.aliases).map(([k, v]) => `alias ${k}='${v}'`).join('\n'));
+      }
+      for (const a of args) {
+        const eq = a.indexOf('=');
+        if (eq === -1) continue;
+        ctx.aliases[a.slice(0, eq)] = a.slice(eq + 1);
+      }
+      return ok('');
+    },
+
+    mount(args, stdin, ctx) {
+      if (args.length === 0) {
+        if (ctx.mounts.length === 0) return ok('');
+        return ok(ctx.mounts.map((m) => `${m.device} en ${m.mountpoint} tipo ${m.fstype} (rw)`).join('\n'));
+      }
+      const device = args[0];
+      const mountpoint = args[1];
+      if (!mountpoint) return fail('mount: falta el punto de montaje', 'Indica dispositivo y punto de montaje: sudo mount /dev/sdb1 /mnt/usb');
+      if (!ctx.sudo) return fail('mount: only root can do that', `Montar dispositivos requiere privilegios de administrador: sudo mount ${device} ${mountpoint}`);
+      if (ctx.mounts.some((m) => m.mountpoint === mountpoint)) {
+        return fail(`mount: ${mountpoint} ya está montado`, `Ya hay algo montado en "${mountpoint}". Desmóntalo primero con umount si quieres reemplazarlo.`);
+      }
+      const pathArr = ctx.vfs.normalize(mountpoint, ctx.getCwd());
+      let node = ctx.vfs.getNode(pathArr);
+      if (!node) {
+        const { parent, name } = ctx.vfs.getParent(pathArr);
+        if (!parent || parent.type !== 'dir') return fail('mount: no existe la carpeta del punto de montaje', `Crea primero la carpeta "${mountpoint}" con mkdir.`);
+        parent.children[name] = TA.vfsHelpers.dir();
+      }
+      ctx.mounts.push({ device, mountpoint, fstype: 'ext4' });
+      return ok('');
+    },
+
+    umount(args, stdin, ctx) {
+      const target = args[0];
+      if (!target) return fail('umount: falta el punto de montaje', 'Indica qué desmontar: sudo umount /mnt/usb');
+      if (!ctx.sudo) return fail('umount: only root can do that', `Desmontar dispositivos requiere privilegios de administrador: sudo umount ${target}`);
+      const idx = ctx.mounts.findIndex((m) => m.mountpoint === target || m.device === target);
+      if (idx === -1) return fail(`umount: ${target}: no está montado`, `No hay nada montado en "${target}". Comprueba con "mount".`);
+      ctx.mounts.splice(idx, 1);
+      return ok('');
+    },
+
+    rsync(args, stdin, ctx) {
+      const flags = args.filter((a) => a.startsWith('-')).join('');
+      const targets = args.filter((a) => !a.startsWith('-'));
+      if (targets.length < 2) return fail('rsync: se requieren un origen y un destino', 'Indica origen y destino: rsync -av origen/ destino/');
+      const [srcRaw, destRaw] = targets;
+      const srcPath = ctx.vfs.normalize(srcRaw, ctx.getCwd());
+      const srcNode = ctx.vfs.getNode(srcPath);
+      if (!srcNode) return fail(`rsync: no se puede acceder a '${srcRaw}': No existe`, `No existe ningún archivo o carpeta llamado "${srcRaw}" aquí.`);
+      const srcDenied = checkPerm(srcNode, 'r', ctx, 'rsync', srcRaw);
+      if (srcDenied) return srcDenied;
+
+      const destPath = ctx.vfs.normalize(destRaw, ctx.getCwd());
+      let destNode = ctx.vfs.getNode(destPath);
+      if (!destNode) {
+        const { parent, name } = ctx.vfs.getParent(destPath);
+        if (!parent || parent.type !== 'dir') return fail('rsync: no existe el directorio destino', `La carpeta destino de "${destRaw}" no existe.`);
+        parent.children[name] = TA.vfsHelpers.dir();
+        destNode = parent.children[name];
+      }
+      const destDenied = checkPerm(destNode, 'w', ctx, 'rsync', destRaw);
+      if (destDenied) return destDenied;
+
+      const transferred = [];
+      const syncInto = (src, dest, prefix) => {
+        if (src.type === 'file') {
+          dest.children = dest.children || {};
+          return;
+        }
+        for (const childName of Object.keys(src.children)) {
+          const childSrc = src.children[childName];
+          const relPath = prefix ? `${prefix}/${childName}` : childName;
+          if (childSrc.type === 'dir') {
+            if (!dest.children[childName] || dest.children[childName].type !== 'dir') {
+              dest.children[childName] = TA.vfsHelpers.dir();
+            }
+            syncInto(childSrc, dest.children[childName], relPath);
+          } else {
+            dest.children[childName] = JSON.parse(JSON.stringify(childSrc));
+            transferred.push(relPath);
+          }
+        }
+      };
+      if (srcNode.type === 'dir') {
+        syncInto(srcNode, destNode, '');
+      } else {
+        const name = srcPath[srcPath.length - 1];
+        destNode.children[name] = JSON.parse(JSON.stringify(srcNode));
+        transferred.push(name);
+      }
+      if (flags.includes('v')) return ok([...transferred, 'sent bytes  received bytes', `total size: ${transferred.length} archivos`].join('\n'));
+      return ok('');
+    },
+
+    lsof(args, stdin, ctx) {
+      const pathArg = args.find((a) => !a.startsWith('-'));
+      const rows = (ctx.openFiles || []).filter((f) => !pathArg || f.path === pathArg || f.path.startsWith(`${pathArg}/`));
+      if (rows.length === 0) return ok('');
+      const header = 'COMANDO     PID  USUARIO   FD   NOMBRE';
+      return ok([header, ...rows.map((r) => `${r.cmd.padEnd(11)} ${String(r.pid).padStart(4)} ${r.user.padEnd(9)} ${(r.fd || '3r').padEnd(4)} ${r.path}`)].join('\n'));
+    },
+
+    wget(args, stdin, ctx) {
+      const oIdx = args.indexOf('-O');
+      const outName = oIdx !== -1 ? args[oIdx + 1] : null;
+      const url = args.find((a, i) => !a.startsWith('-') && args[i - 1] !== '-O');
+      if (!url) return fail('wget: falta la URL', 'Indica una URL, por ejemplo: wget http://cdn.academia.local/archivo.txt');
+      const body = ctx.network.routes ? ctx.network.routes[url] : undefined;
+      if (body === undefined) {
+        return fail(`wget: no se pudo resolver ${url}`, `No existe ningún recurso simulado en "${url}". Comprueba la URL exacta indicada en el objetivo del nivel.`);
+      }
+      const name = outName || url.split('/').filter(Boolean).pop() || 'index.html';
+      const pathArr = ctx.vfs.normalize(name, ctx.getCwd());
+      const { parent, name: fname } = ctx.vfs.getParent(pathArr);
+      if (!parent || parent.type !== 'dir') return fail('wget: no existe el directorio destino', 'La carpeta donde intentas guardar el archivo no existe.');
+      const denied = checkPerm(parent, 'w', ctx, 'wget', name);
+      if (denied) return denied;
+      parent.children[fname] = TA.vfsHelpers.file(body);
+      return ok(`«${url}» guardado como «${name}» [${body.length}/${body.length}]`);
+    },
+
     df(args, stdin, ctx) {
       return ok([
         'Sist. de ficheros   Tamaño  Usado  Disp.  Uso%  Montado en',
@@ -1419,6 +1740,25 @@ window.TA = window.TA || {};
         ip: 'Configuración de red: ip addr (o ip a) muestra interfaces, ip route muestra la tabla de rutas.',
         ufw: 'Cortafuegos: ufw status, ufw enable/disable, ufw allow/deny <puerto> (requiere sudo salvo status).',
         'ssh-keygen': 'Genera un par de claves SSH (privada y pública) en ~/.ssh/.',
+        ln: 'Crea enlaces: ln origen enlace (duro) o ln -s origen enlace (simbólico).',
+        man: 'Muestra la página de manual de un comando: man <comando>.',
+        whatis: 'Muestra una descripción de una línea de un comando.',
+        apropos: 'Busca comandos por palabra clave en sus descripciones.',
+        which: 'Muestra la ruta completa de un comando.',
+        whereis: 'Muestra la ruta del binario y su página de manual.',
+        tac: 'Muestra un archivo con las líneas en orden inverso.',
+        more: 'Muestra el contenido de un archivo (alias de cat en este simulador).',
+        less: 'Muestra el contenido de un archivo (alias de cat en este simulador).',
+        pstree: 'Muestra los procesos en forma de árbol.',
+        strace: 'Ejecuta un comando mostrando sus llamadas al sistema.',
+        chage: 'Define el plazo de expiración de la contraseña de un usuario (requiere sudo).',
+        xargs: 'Ejecuta un comando una vez por cada línea recibida por la entrada.',
+        alias: 'Define un atajo para un comando: alias ll=\'ls -la\'.',
+        mount: 'Monta un dispositivo en un punto de montaje (requiere sudo).',
+        umount: 'Desmonta un dispositivo (requiere sudo).',
+        rsync: 'Sincroniza archivos y directorios: rsync -av origen/ destino/.',
+        lsof: 'Lista los archivos abiertos, opcionalmente filtrando por ruta.',
+        wget: 'Descarga un archivo desde una URL.',
       };
       if (args[0] && catalog[args[0]]) return ok(`${args[0]}: ${catalog[args[0]]}`);
       return ok(Object.entries(catalog).map(([k, v]) => `${k.padEnd(8)} ${v}`).join('\n'));
@@ -1481,32 +1821,32 @@ window.TA = window.TA || {};
 
     let background = false;
     let nohup = false;
-    if (rawTokens[0] && rawTokens[0].quote === null && rawTokens[0].text === 'nohup') {
+    if (rawTokens[0] && bareText(rawTokens[0]) === 'nohup') {
       nohup = true;
       rawTokens = rawTokens.slice(1);
     }
     const lastRaw = rawTokens[rawTokens.length - 1];
-    if (lastRaw && lastRaw.quote === null && lastRaw.text === '&') {
+    if (lastRaw && bareText(lastRaw) === '&') {
       background = true;
       rawTokens = rawTokens.slice(0, -1);
     }
 
     if (rawTokens.length === 0) return { ok: true, output: '', explain: null, stages: [], raw: line };
-    const displayCmd = rawTokens.map((t) => t.text).join(' ');
+    const displayCmd = rawTokens.map(tokenRawText).join(' ');
 
     const stageTokenGroups = [[]];
     for (const t of rawTokens) {
-      if (t.quote === null && t.text === '|') stageTokenGroups.push([]);
+      if (bareText(t) === '|') stageTokenGroups.push([]);
       else stageTokenGroups[stageTokenGroups.length - 1].push(t);
     }
 
     let redirect = null;
     const lastIdx = stageTokenGroups.length - 1;
     const lastTokens = stageTokenGroups[lastIdx];
-    const redirIdx = lastTokens.findIndex((t) => t.quote === null && (t.text === '>' || t.text === '>>'));
+    const redirIdx = lastTokens.findIndex((t) => bareText(t) === '>' || bareText(t) === '>>');
     if (redirIdx !== -1) {
       const fileTok = lastTokens[redirIdx + 1];
-      redirect = { append: lastTokens[redirIdx].text === '>>', file: fileTok ? resolveToken(fileTok, ctx) : null };
+      redirect = { append: bareText(lastTokens[redirIdx]) === '>>', file: fileTok ? resolveToken(fileTok, ctx) : null };
       stageTokenGroups[lastIdx] = lastTokens.slice(0, redirIdx);
     }
 
@@ -1522,13 +1862,23 @@ window.TA = window.TA || {};
       }
       let stageTokens = stageTokensRaw;
       let stageSudo = false;
-      if (stageTokens[0].quote === null && stageTokens[0].text === 'sudo') {
+      if (bareText(stageTokens[0]) === 'sudo') {
         stageSudo = true;
         stageTokens = stageTokens.slice(1);
       }
       if (stageTokens.length === 0) {
         lastErr = 'bash: sudo: falta el comando a ejecutar';
         lastExplain = 'sudo debe ir seguido de otro comando, por ejemplo: sudo cat /etc/config.conf';
+        break;
+      }
+      const aliasKey = bareText(stageTokens[0]);
+      if (aliasKey && Object.prototype.hasOwnProperty.call(ctx.aliases, aliasKey)) {
+        const aliasTokens = tokenize(ctx.aliases[aliasKey]);
+        stageTokens = [...aliasTokens, ...stageTokens.slice(1)];
+      }
+      if (stageTokens.length === 0) {
+        lastErr = `bash: ${aliasKey}: el alias está vacío`;
+        lastExplain = `El alias "${aliasKey}" no tiene ningún comando definido. Redefínelo con: alias ${aliasKey}='comando'`;
         break;
       }
       const resolved = stageTokens.map((t) => resolveToken(t, ctx));

@@ -15,6 +15,10 @@ window.TA = window.TA || {};
     return { type: 'dir', perms, children, owner, group };
   }
 
+  function symlink(target, owner = 'jugador', group = 'jugador') {
+    return { type: 'symlink', target, perms: 'rwxrwxrwx', owner, group };
+  }
+
   function octalToRwx(mode) {
     return String(mode)
       .split('')
@@ -83,13 +87,39 @@ window.TA = window.TA || {};
       return '/' + arr.join('/');
     }
 
-    getNode(pathArr) {
+    // Resuelve una ruta siguiendo enlaces simbólicos (intermedios y finales), como haría
+    // el kernel real. `depth` evita bucles infinitos con enlaces que se apuntan entre sí.
+    getNode(pathArr, depth = 0) {
+      if (depth > 10) return null;
       let node = this.root;
-      for (const seg of pathArr) {
+      let dirPath = [];
+      for (let i = 0; i < pathArr.length; i++) {
+        const seg = pathArr[i];
         if (!node || node.type !== 'dir' || !node.children[seg]) return null;
-        node = node.children[seg];
+        let child = node.children[seg];
+        if (child.type === 'symlink') {
+          const targetPath = this.normalize(child.target, dirPath);
+          const resolved = this.getNode(targetPath, depth + 1);
+          if (!resolved) return null;
+          if (i === pathArr.length - 1) return resolved;
+          if (resolved.type !== 'dir') return null;
+          node = resolved;
+          dirPath = targetPath;
+          continue;
+        }
+        node = child;
+        dirPath = [...dirPath, seg];
       }
       return node;
+    }
+
+    // Como getNode, pero sin seguir el enlace si el ÚLTIMO componente es un symlink
+    // (para comandos como "ls -l" que deben mostrar el enlace en sí, no su destino).
+    getNodeNoFollow(pathArr) {
+      if (pathArr.length === 0) return this.getNode(pathArr);
+      const { parent } = this.getParent(pathArr);
+      if (!parent || parent.type !== 'dir') return null;
+      return parent.children[pathArr[pathArr.length - 1]] || null;
     }
 
     getParent(pathArr) {
@@ -106,5 +136,5 @@ window.TA = window.TA || {};
   }
 
   TA.VFS = VFS;
-  TA.vfsHelpers = { file, dir, octalToRwx, hasPermission, applyUmask };
+  TA.vfsHelpers = { file, dir, symlink, octalToRwx, hasPermission, applyUmask };
 })();

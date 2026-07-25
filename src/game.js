@@ -27,6 +27,9 @@ window.TA = window.TA || {};
     users: [],
     groups: [],
     firewall: { enabled: false, rules: [] },
+    mounts: [],
+    openFiles: [],
+    aliases: {},
   };
 
   function loadProgress() {
@@ -134,6 +137,9 @@ window.TA = window.TA || {};
     state.users = level.createUsers ? level.createUsers() : [];
     state.groups = level.createGroups ? level.createGroups() : [];
     state.firewall = level.createFirewall ? level.createFirewall() : { enabled: false, rules: [] };
+    state.mounts = level.createMounts ? level.createMounts() : [];
+    state.openFiles = level.createOpenFiles ? level.createOpenFiles() : [];
+    state.aliases = level.createAliases ? level.createAliases() : {};
 
     els.title.textContent = level.title;
     els.story.textContent = level.story;
@@ -181,6 +187,9 @@ window.TA = window.TA || {};
       users: state.users,
       groups: state.groups,
       firewall: state.firewall,
+      mounts: state.mounts,
+      openFiles: state.openFiles,
+      aliases: state.aliases,
     };
   }
 
@@ -248,6 +257,9 @@ window.TA = window.TA || {};
         users: state.users,
         groups: state.groups,
         firewall: state.firewall,
+        mounts: state.mounts,
+        openFiles: state.openFiles,
+        aliases: state.aliases,
       });
       if (passed) markComplete();
     }

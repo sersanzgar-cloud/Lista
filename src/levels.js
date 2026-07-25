@@ -876,6 +876,148 @@ window.TA = window.TA || {};
         return !!pub && !!priv && priv.perms === 'rw-------' && !!authorized && pub.content.trim().length > 0 && authorized.content.includes(pub.content.trim());
       },
     },
+
+    // --- Herramientas del día a día que todo profesional acaba usando ---
+
+    {
+      id: 'nivel-37',
+      title: 'Nivel 37 · El manual',
+      story: 'Nadie se memoriza todas las opciones de todos los comandos, ni falta que hace: para eso está el manual.',
+      objective: 'Usa man para consultar la documentación de tar y de grep, dos comandos que no siempre recuerdas de memoria.',
+      commands: ['man'],
+      hints: [
+        'man <comando> muestra la página de manual: nombre, sintaxis y descripción.',
+        'Prueba: man tar',
+        'Y también: man grep',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome(),
+      check(ctx) {
+        const manTar = anyStage(ctx.history, (h) => h.cmd === 'man' && h.args[0] === 'tar' && !h.error);
+        const manGrep = anyStage(ctx.history, (h) => h.cmd === 'man' && h.args[0] === 'grep' && !h.error);
+        return manTar && manGrep;
+      },
+    },
+
+    {
+      id: 'nivel-38',
+      title: 'Nivel 38 · Enlaces',
+      story: 'Vas a comprobar en la práctica la diferencia entre un enlace simbólico y un enlace duro — algo que confunde a casi todo el mundo la primera vez.',
+      objective: 'Crea un enlace simbólico "acceso_rapido" y un enlace duro "copia_real", ambos apuntando a documentos/informe.txt. Borra el archivo original, y comprueba: el enlace duro sigue funcionando (cat copia_real), pero el simbólico se ha roto (cat acceso_rapido fallará).',
+      commands: ['ln -s', 'ln', 'rm'],
+      hints: [
+        'ln -s origen enlace crea un enlace simbólico: un atajo que apunta a otra ruta.',
+        'ln origen enlace (sin -s) crea un enlace duro: comparte el mismo contenido real, no es solo un atajo.',
+        'Después de "rm documentos/informe.txt", prueba a leer ambos enlaces con cat y observa la diferencia.',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome({ documentos: dir({ 'informe.txt': file('Datos importantes del informe.\n') }) }),
+      check(ctx) {
+        const originalGone = !ctx.vfs.getNode(['home', 'jugador', 'documentos', 'informe.txt']);
+        const hardStillWorks = anyStage(ctx.history, (h) => h.cmd === 'cat' && h.args.includes('copia_real') && !h.error && h.output.length > 0);
+        const symBroken = anyStage(ctx.history, (h) => h.cmd === 'cat' && h.args.includes('acceso_rapido') && !!h.error);
+        return originalGone && hardStillWorks && symBroken;
+      },
+    },
+
+    {
+      id: 'nivel-39',
+      title: 'Nivel 39 · Montar dispositivos',
+      story: 'Han conectado una memoria USB al servidor, pero todavía no es accesible desde el sistema de archivos.',
+      objective: 'Monta el dispositivo /dev/sdb1 en /mnt/usb, comprueba que aparece con mount, y desmóntalo de forma segura antes de retirarlo.',
+      commands: ['sudo mount', 'mount', 'sudo umount'],
+      hints: [
+        'sudo mount /dev/sdb1 /mnt/usb monta el dispositivo en esa carpeta.',
+        'mount (sin argumentos) lista todo lo que está montado actualmente.',
+        'Antes de desconectar un dispositivo físicamente, desmóntalo: sudo umount /mnt/usb',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => {
+        const fs = baseHome();
+        fs.children.mnt = dir({});
+        return fs;
+      },
+      check(ctx) {
+        const didMount = anyStage(ctx.history, (h) => h.cmd === 'mount' && h.args[0] === '/dev/sdb1' && !h.error);
+        const listed = anyStage(ctx.history, (h) => h.cmd === 'mount' && h.args.length === 0 && h.output.includes('/mnt/usb'));
+        const didUmount = anyStage(ctx.history, (h) => h.cmd === 'umount' && h.args[0] === '/mnt/usb' && !h.error);
+        return didMount && listed && didUmount;
+      },
+    },
+
+    {
+      id: 'nivel-40',
+      title: 'Nivel 40 · Sincronizar con rsync',
+      story: 'Vas a hacer una copia de seguridad de un proyecto antes de un despliegue arriesgado.',
+      objective: 'Sincroniza el contenido de proyecto/ dentro de respaldo/ usando rsync -av.',
+      commands: ['rsync -av'],
+      hints: [
+        'rsync -av origen/ destino/ copia (y mantiene sincronizados) los archivos de una carpeta a otra.',
+        'Prueba: rsync -av proyecto/ respaldo/',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome({
+        proyecto: dir({ 'app.py': file('print("v2")\n'), 'config.yml': file('entorno: produccion\n') }),
+        respaldo: dir({}),
+      }),
+      check(ctx) {
+        const app = ctx.vfs.getNode(['home', 'jugador', 'respaldo', 'app.py']);
+        const config = ctx.vfs.getNode(['home', 'jugador', 'respaldo', 'config.yml']);
+        return !!app && !!config && usedCmd(ctx.history, 'rsync');
+      },
+    },
+
+    {
+      id: 'nivel-41',
+      title: 'Nivel 41 · Archivos ocupados y atajos',
+      story: 'Un compañero se queja de que no puede desmontar /mnt/datos porque el sistema dice que "está ocupado". Además, quieres dejar de escribir "ls -la" entero cada vez.',
+      objective: 'Usa lsof para ver qué proceso tiene algo abierto dentro de /mnt/datos. Luego crea un alias "ll" para "ls -la", y pruébalo.',
+      commands: ['lsof', 'alias'],
+      hints: [
+        'lsof [ruta] muestra qué procesos tienen archivos abiertos, opcionalmente filtrando por una ruta: lsof /mnt/datos',
+        'Define un atajo con: alias ll=\'ls -la\'',
+        'Después, simplemente escribe "ll" para ejecutar "ls -la".',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => {
+        const fs = baseHome();
+        fs.children.mnt = dir({ datos: dir({}) });
+        return fs;
+      },
+      createOpenFiles: () => [
+        { cmd: 'backup-agent', pid: 2044, user: 'root', fd: '4w', path: '/mnt/datos/snapshot.img' },
+      ],
+      check(ctx) {
+        const usedLsof = anyStage(ctx.history, (h) => h.cmd === 'lsof' && h.output.includes('backup-agent'));
+        const aliasDefined = ctx.aliases.ll === 'ls -la';
+        const aliasUsed = anyStage(ctx.history, (h) => h.raw === 'll' && h.cmd === 'ls');
+        return usedLsof && aliasDefined && aliasUsed;
+      },
+    },
+
+    {
+      id: 'nivel-42',
+      title: 'Nivel 42 · Descargar y localizar',
+      story: 'Vas a instalar una herramienta interna. Antes de nada, comprueba si ya está disponible en el sistema, y descarga el script de instalación desde el repositorio interno.',
+      objective: 'Comprueba con which que el comando rsync existe en el sistema, y descarga http://cdn.academia.local/instalador.sh con wget.',
+      commands: ['which', 'wget'],
+      hints: [
+        'which <comando> muestra la ruta completa de un comando si existe en el sistema: which rsync',
+        'wget <url> descarga el contenido de una URL y lo guarda como archivo local.',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome(),
+      createNetwork: () => ({
+        routes: { 'http://cdn.academia.local/instalador.sh': '#!/bin/bash\necho "Instalando herramienta interna..."\n' },
+        hosts: {},
+        ports: [],
+      }),
+      check(ctx) {
+        const whichOk = anyStage(ctx.history, (h) => h.cmd === 'which' && h.args[0] === 'rsync' && !h.error && h.output.includes('rsync'));
+        const node = ctx.vfs.getNode(['home', 'jugador', 'instalador.sh']);
+        return whichOk && !!node && node.content.includes('Instalando');
+      },
+    },
   ];
 
   TA.LEVELS = LEVELS;

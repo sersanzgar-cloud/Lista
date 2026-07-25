@@ -6,7 +6,7 @@ de archivos virtual, permisos reales (lectura/escritura/ejecución, propietarios
 `sudo`), procesos, variables de entorno y red. Cada nivel plantea un objetivo y se
 completa automáticamente al ejecutar los comandos correctos.
 
-37 niveles (0-36) en cinco bloques:
+43 niveles (0-42) en seis bloques:
 - **Nivel 0 (introducción):** qué es una terminal, qué es Linux, cómo leer el prompt
   — sin dar nada por sabido, para quien nunca ha visto una terminal.
 - **Niveles 1-10 (fundamentos):** moverte por directorios, crear/leer archivos, copiar,
@@ -23,6 +23,10 @@ completa automáticamente al ejecutar los comandos correctos.
   de archivos virtual.
 - **Niveles 33-36 (redes avanzadas y SSH):** cortafuegos (`ufw`), DNS (`dig`/`nslookup`),
   rutas (`ip addr`/`ip route`), y autenticación por clave pública (`ssh-keygen`).
+- **Niveles 37-42 (herramientas del día a día):** el manual (`man`/`whatis`/`apropos`),
+  enlaces simbólicos y duros reales (`ln`), montar dispositivos (`mount`/`umount`),
+  sincronización (`rsync`), archivos abiertos (`lsof`), atajos (`alias`), y descarga de
+  archivos (`wget`/`which`/`whereis`).
 
 No requiere instalación ni dependencias: es HTML/CSS/JS sin build.
 
@@ -40,14 +44,14 @@ El progreso se guarda en el `localStorage` del navegador.
 
 ## Estructura
 
-- `src/vfs.js` — sistema de archivos virtual (directorios, archivos, permisos,
-  propietario/grupo, `umask`).
+- `src/vfs.js` — sistema de archivos virtual (directorios, archivos, enlaces simbólicos
+  con resolución real, permisos, propietario/grupo, `umask`).
 - `src/shell.js` — intérprete de comandos (navegación y archivos, texto y scripting,
-  procesos, red/sistema, paquetes/servicios/usuarios/git), con soporte de tuberías
-  (`|`), redirección (`>`, `>>`), variables de entorno (comillas simples vs dobles,
-  parámetros posicionales), `sudo`, segundo plano (`&`, `nohup`), y un intérprete real
-  de bloques `for`/`if` para scripts.
-- `src/levels.js` — definición de los 37 niveles (historia, objetivo, pistas y
+  procesos, red/sistema, paquetes/servicios/usuarios/git, montaje/sincronización/enlaces),
+  con soporte de tuberías (`|`), redirección (`>`, `>>`), variables de entorno (comillas
+  simples vs dobles, parámetros posicionales), `sudo`, alias, segundo plano (`&`, `nohup`),
+  y un intérprete real de bloques `for`/`if` para scripts.
+- `src/levels.js` — definición de los 43 niveles (historia, objetivo, pistas y
   validación).
 - `src/game.js` — controlador de la interfaz: terminal, progreso, pistas, barra táctil.
 - `manifest.json` / `service-worker.js` / `icons/` — PWA instalable en Android.
