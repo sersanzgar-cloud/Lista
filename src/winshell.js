@@ -584,6 +584,27 @@ window.TA = window.TA || {};
     },
   };
 
+  // Nombre canónico del cmdlet para cada alias, usado para registrar el historial
+  // de forma consistente aunque el jugador use un alias (pwd, sl, ls...).
+  const PS_CANONICAL = {
+    'get-childitem': 'get-childitem', dir: 'get-childitem', ls: 'get-childitem', gci: 'get-childitem',
+    'set-location': 'set-location', cd: 'set-location', sl: 'set-location',
+    'get-location': 'get-location', pwd: 'get-location', gl: 'get-location',
+    'get-content': 'get-content', cat: 'get-content', gc: 'get-content', type: 'get-content',
+    'copy-item': 'copy-item', cp: 'copy-item', copy: 'copy-item', ci: 'copy-item',
+    'move-item': 'move-item', mv: 'move-item', move: 'move-item',
+    'remove-item': 'remove-item', rm: 'remove-item', del: 'remove-item', erase: 'remove-item', ri: 'remove-item',
+    'rename-item': 'rename-item', ren: 'rename-item', rni: 'rename-item',
+    'new-item': 'new-item', ni: 'new-item',
+    mkdir: 'mkdir', md: 'mkdir',
+    'select-string': 'select-string', sls: 'select-string',
+    'get-process': 'get-process', ps: 'get-process', gps: 'get-process',
+    'stop-process': 'stop-process', kill: 'stop-process', spps: 'stop-process',
+    'clear-host': 'clear-host', cls: 'clear-host', clear: 'clear-host',
+    'write-output': 'write-output', echo: 'write-output',
+    'get-help': 'get-help', help: 'get-help', man: 'get-help',
+  };
+
   const PS_COMMANDS = {
     'get-childitem': psImpl.getChildItem,
     dir: psImpl.getChildItem,
@@ -695,7 +716,8 @@ window.TA = window.TA || {};
       } else {
         result = fn(args, stdin, ctx);
       }
-      stages.push({ cmd: key, args, output: result.output, error: !result.ok });
+      const historyKey = ctx.flavor === 'powershell' ? (PS_CANONICAL[key] || key) : key;
+      stages.push({ cmd: historyKey, args, output: result.output, error: !result.ok });
       if (result.clear) clearFlag = true;
       stdin = result.output;
       lastOutput = result.output;
