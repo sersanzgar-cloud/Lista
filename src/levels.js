@@ -27,6 +27,31 @@ window.TA = window.TA || {};
 
   const LEVELS = [
     {
+      id: 'nivel-0',
+      title: 'Nivel 0 · ¿Qué es todo esto?',
+      story:
+        'Bienvenido. Antes de escribir nada, unos minutos de contexto — no hace falta saber nada de programación. ' +
+        'Una terminal es una forma de hablar con el ordenador escribiendo texto, en vez de hacer clic en iconos. ' +
+        'Linux es un sistema operativo, como Windows o macOS, pero es el que hace funcionar la inmensa mayoría de servidores de internet. ' +
+        'El programa que lee lo que escribes y lo ejecuta se llama "shell" (aquí simulamos bash, el más habitual). ' +
+        'Cada línea que ves termina en un símbolo llamado "prompt": jugador@academia:~$ significa "usuario jugador, en el servidor academia, en la carpeta ~ (tu carpeta personal)". ' +
+        'Todo lo que escribas justo después de ese símbolo $ es un comando; pulsas Enter para ejecutarlo.',
+      objective:
+        'Escribe tu primer comando: whoami (te dice qué usuario eres). Importante: Linux distingue mayúsculas de minúsculas — "whoami" y "WhoAmI" no son lo mismo, así que escríbelo todo en minúsculas.',
+      commands: ['whoami'],
+      hints: [
+        'Haz clic en el recuadro de texto junto al símbolo $ y escribe: whoami (todo en minúsculas), luego pulsa la tecla Enter.',
+        'Si te equivocas de comando no pasa nada: la terminal te lo dirá con un mensaje y podrás intentarlo de nuevo. No puedes "romper" nada en este simulador.',
+        'El texto "jugador@academia:~$" es solo información de contexto (quién eres y dónde estás); no forma parte del comando que tienes que escribir.',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome(),
+      check(ctx) {
+        return usedCmd(ctx.history, 'whoami');
+      },
+    },
+
+    {
       id: 'nivel-1',
       title: 'Nivel 1 · Orientación',
       story: 'Acabas de conectarte al servidor de la academia. Antes de tocar nada, ubícate: ¿dónde estás y qué hay a tu alrededor?',
@@ -752,6 +777,103 @@ window.TA = window.TA || {};
         const installed = ctx.packages.installed.includes('rsync');
         const restarted = anyStage(ctx.history, (h) => h.cmd === 'systemctl' && (h.args[0] === 'restart' || h.args[0] === 'start') && h.args[1] === 'app' && !h.error);
         return committed && installed && restarted;
+      },
+    },
+
+    // --- Redes avanzadas y SSH ---
+
+    {
+      id: 'nivel-33',
+      title: 'Nivel 33 · Cortafuegos',
+      story: 'El servidor de producción no tiene cortafuegos activo, y encima quedó abierto un puerto de pruebas que nadie cerró.',
+      objective: 'Activa el cortafuegos (sudo ufw enable), permite el tráfico SSH para no quedarte fuera (sudo ufw allow 22), y bloquea el puerto de pruebas 8080 (sudo ufw deny 8080).',
+      commands: ['sudo ufw enable', 'sudo ufw allow', 'sudo ufw deny'],
+      hints: [
+        'sudo ufw enable activa el cortafuegos.',
+        'Antes de activarlo (o justo después) permite SSH para no perder el acceso: sudo ufw allow 22',
+        'Bloquea el puerto de pruebas: sudo ufw deny 8080',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome(),
+      check(ctx) {
+        const fw = ctx.firewall;
+        const enabled = fw.enabled === true;
+        const allowedSsh = fw.rules.some((r) => r.port === 22 && r.action === 'ALLOW');
+        const deniedTest = fw.rules.some((r) => r.port === 8080 && r.action === 'DENY');
+        return enabled && allowedSsh && deniedTest;
+      },
+    },
+
+    {
+      id: 'nivel-34',
+      title: 'Nivel 34 · DNS y resolución de nombres',
+      story: 'El archivo /etc/hosts de este servidor apunta a la IP equivocada para la API interna. Un despliegue reciente cambió la IP y nadie actualizó el archivo.',
+      objective: 'Usa dig para averiguar la IP correcta de api.academia.local, y corrige /etc/hosts con sed para que apunte a esa IP.',
+      commands: ['dig', 'sed -i'],
+      hints: [
+        'dig <dominio> consulta el DNS y te da la IP real: dig api.academia.local',
+        'Compara esa IP con la que hay en /etc/hosts (cat /etc/hosts).',
+        'Corrige el archivo con sed: sed -i \'s/IP_VIEJA/IP_NUEVA/\' /etc/hosts',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => {
+        const fs = baseHome();
+        fs.children.etc.children.hosts = file('127.0.0.1\tlocalhost\n10.0.5.9\tapi.academia.local\n');
+        return fs;
+      },
+      createNetwork: () => ({ routes: {}, hosts: {}, ports: [], dns: { 'api.academia.local': '10.0.5.23' } }),
+      check(ctx) {
+        const digged = anyStage(ctx.history, (h) => h.cmd === 'dig' && h.output.includes('10.0.5.23'));
+        const node = ctx.vfs.getNode(['etc', 'hosts']);
+        const fixed = !!node && node.content.includes('10.0.5.23') && !node.content.includes('10.0.5.9');
+        return digged && fixed;
+      },
+    },
+
+    {
+      id: 'nivel-35',
+      title: 'Nivel 35 · Rutas de red',
+      story: 'Necesitas documentar la configuración de red del servidor antes de una auditoría.',
+      objective: 'Usa ip addr para ver la IP del servidor, y ip route para encontrar la puerta de enlace (gateway) por defecto.',
+      commands: ['ip addr', 'ip route'],
+      hints: [
+        'ip addr (o ip a) muestra las interfaces de red y sus direcciones IP.',
+        'ip route muestra la tabla de rutas; la línea "default via ..." indica la puerta de enlace.',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome(),
+      createNetwork: () => ({
+        routes: {},
+        hosts: {},
+        ports: [],
+        interfaces: [{ id: 1, name: 'eth0', ip: '10.0.5.9/24' }],
+        routeTable: ['default via 10.0.5.1 dev eth0', '10.0.5.0/24 dev eth0 scope link'],
+      }),
+      check(ctx) {
+        const usedAddr = anyStage(ctx.history, (h) => h.cmd === 'ip' && (h.args[0] === 'addr' || h.args[0] === 'a'));
+        const usedRoute = anyStage(ctx.history, (h) => h.cmd === 'ip' && h.args[0] === 'route');
+        return usedAddr && usedRoute;
+      },
+    },
+
+    {
+      id: 'nivel-36',
+      title: 'Nivel 36 · Claves SSH',
+      story: 'Quieres conectarte a un servidor remoto sin contraseña, de forma segura, usando autenticación por clave pública.',
+      objective: 'Genera tu par de claves con ssh-keygen, y añade tu clave pública al archivo authorized_keys del servidor remoto (servidor-remoto/authorized_keys).',
+      commands: ['ssh-keygen', 'cat', '>>'],
+      hints: [
+        'ssh-keygen genera un par de claves: una privada (nunca la compartas) y una pública (esa sí puedes compartirla).',
+        'Las encontrarás en ~/.ssh/id_rsa (privada) y ~/.ssh/id_rsa.pub (pública).',
+        'Añade tu clave pública al servidor remoto: cat ~/.ssh/id_rsa.pub >> servidor-remoto/authorized_keys',
+      ],
+      startCwd: ['home', 'jugador'],
+      createFs: () => baseHome({ 'servidor-remoto': dir({ authorized_keys: file('') }) }),
+      check(ctx) {
+        const pub = ctx.vfs.getNode(['home', 'jugador', '.ssh', 'id_rsa.pub']);
+        const priv = ctx.vfs.getNode(['home', 'jugador', '.ssh', 'id_rsa']);
+        const authorized = ctx.vfs.getNode(['home', 'jugador', 'servidor-remoto', 'authorized_keys']);
+        return !!pub && !!priv && priv.perms === 'rw-------' && !!authorized && pub.content.trim().length > 0 && authorized.content.includes(pub.content.trim());
       },
     },
   ];

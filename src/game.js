@@ -26,6 +26,7 @@ window.TA = window.TA || {};
     services: [],
     users: [],
     groups: [],
+    firewall: { enabled: false, rules: [] },
   };
 
   function loadProgress() {
@@ -75,7 +76,8 @@ window.TA = window.TA || {};
         + (i === state.levelIndex ? ' active' : '')
         + (done ? ' done' : '')
         + (!unlocked ? ' locked' : '');
-      const icon = done ? '✔' : (unlocked ? String(i + 1).padStart(2, '0') : '🔒');
+      const levelNum = level.id.replace('nivel-', '').padStart(2, '0');
+      const icon = done ? '✔' : (unlocked ? levelNum : '🔒');
       li.innerHTML = `<span class="level-icon">${icon}</span><span class="level-name">${level.title.replace(/^Nivel \d+ · /, '')}</span>`;
       if (unlocked) {
         li.addEventListener('click', () => loadLevel(i));
@@ -131,6 +133,7 @@ window.TA = window.TA || {};
     state.services = level.createServices ? level.createServices() : [];
     state.users = level.createUsers ? level.createUsers() : [];
     state.groups = level.createGroups ? level.createGroups() : [];
+    state.firewall = level.createFirewall ? level.createFirewall() : { enabled: false, rules: [] };
 
     els.title.textContent = level.title;
     els.story.textContent = level.story;
@@ -177,6 +180,7 @@ window.TA = window.TA || {};
       services: state.services,
       users: state.users,
       groups: state.groups,
+      firewall: state.firewall,
     };
   }
 
@@ -243,6 +247,7 @@ window.TA = window.TA || {};
         services: state.services,
         users: state.users,
         groups: state.groups,
+        firewall: state.firewall,
       });
       if (passed) markComplete();
     }

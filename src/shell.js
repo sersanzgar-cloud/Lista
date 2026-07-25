@@ -990,6 +990,91 @@ window.TA = window.TA || {};
       return COMMANDS.ss(args, stdin, ctx);
     },
 
+    dig(args, stdin, ctx) {
+      const host = args.find((a) => !a.startsWith('-'));
+      if (!host) return fail('dig: falta el nombre a resolver', 'Indica un dominio, por ejemplo: dig academia.local');
+      const ip = ctx.network.dns ? ctx.network.dns[host] : undefined;
+      if (!ip) {
+        return ok(`; <<>> DiG 9.18 <<>> ${host}\n;; connection timed out; no servers could be reached`);
+      }
+      return ok(`; <<>> DiG 9.18 <<>> ${host}\n;; ANSWER SECTION:\n${host}.\t\t300\tIN\tA\t${ip}`);
+    },
+
+    nslookup(args, stdin, ctx) {
+      const host = args[0];
+      if (!host) return fail('nslookup: falta el nombre a resolver', 'Indica un dominio, por ejemplo: nslookup academia.local');
+      const ip = ctx.network.dns ? ctx.network.dns[host] : undefined;
+      if (!ip) return ok(`Servidor:\t127.0.0.53\n\n** el servidor no pudo encontrar ${host}: NXDOMAIN`);
+      return ok(`Servidor:\t127.0.0.53\n\nNombre:\t${host}\nAddress:\t${ip}`);
+    },
+
+    ip(args, stdin, ctx) {
+      const sub = args[0];
+      const net = ctx.network || {};
+      if (sub === 'addr' || sub === 'a') {
+        const ifaces = net.interfaces || [];
+        if (ifaces.length === 0) return ok('No hay interfaces configuradas.');
+        return ok(ifaces.map((i) => `${i.id}: ${i.name}: <${i.flags || 'UP,BROADCAST,RUNNING'}> mtu 1500\n    inet ${i.ip} scope global ${i.name}`).join('\n'));
+      }
+      if (sub === 'route') {
+        const rows = net.routeTable || [];
+        return ok(rows.join('\n'));
+      }
+      return fail(`ip: orden '${sub}' no reconocida`, 'Este simulador entiende: ip addr (o ip a) e ip route.');
+    },
+
+    ufw(args, stdin, ctx) {
+      const sub = args[0];
+      if (sub === 'status') {
+        if (!ctx.firewall.enabled) return ok('Estado: inactivo');
+        const rows = ctx.firewall.rules.map((r) => `${String(r.port)}${r.proto ? '/' + r.proto : ''}`.padEnd(24) + r.action);
+        return ok(['Estado: activo', '', 'A                       Acción', '-                       ------', ...rows].join('\n'));
+      }
+      if (sub === 'enable') {
+        if (!ctx.sudo) return fail('ERROR: necesitas privilegios de administrador', 'Activar el cortafuegos requiere privilegios de administrador: sudo ufw enable');
+        ctx.firewall.enabled = true;
+        return ok('Cortafuegos activo e iniciado en el arranque del sistema');
+      }
+      if (sub === 'disable') {
+        if (!ctx.sudo) return fail('ERROR: necesitas privilegios de administrador', 'Desactivar el cortafuegos requiere privilegios de administrador: sudo ufw disable');
+        ctx.firewall.enabled = false;
+        return ok('Cortafuegos desactivado');
+      }
+      if (sub === 'allow' || sub === 'deny') {
+        const spec = args[1];
+        if (!spec) return fail('ufw: falta el puerto', `Indica un puerto, por ejemplo: sudo ufw ${sub} 22`);
+        if (!ctx.sudo) {
+          return fail(
+            'ERROR: necesitas privilegios de administrador',
+            `Modificar las reglas del cortafuegos requiere privilegios de administrador: sudo ufw ${sub} ${spec}`
+          );
+        }
+        const [portRaw, proto] = spec.split('/');
+        const port = parseInt(portRaw, 10);
+        ctx.firewall.rules.push({ port, proto: proto || null, action: sub === 'allow' ? 'ALLOW' : 'DENY' });
+        return ok('Reglas actualizadas');
+      }
+      return fail(`ufw: orden '${sub}' no reconocida`, 'Este simulador entiende: ufw status, ufw enable/disable, ufw allow/deny <puerto>.');
+    },
+
+    'ssh-keygen'(args, stdin, ctx) {
+      const home = ['home', 'jugador'];
+      const sshDirPath = [...home, '.ssh'];
+      let sshDirNode = ctx.vfs.getNode(sshDirPath);
+      if (!sshDirNode) {
+        const parent = ctx.vfs.getNode(home);
+        parent.children['.ssh'] = TA.vfsHelpers.dir({}, 'rwx------');
+        sshDirNode = parent.children['.ssh'];
+      }
+      const fakePub = 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7f4z9examplesimulatedkey jugador@academia';
+      const fakePriv = '-----BEGIN OPENSSH PRIVATE KEY-----\n[clave privada simulada — nunca la compartas con nadie]\n-----END OPENSSH PRIVATE KEY-----';
+      sshDirNode.children['id_rsa'] = TA.vfsHelpers.file(fakePriv, 'rw-------');
+      sshDirNode.children['id_rsa.pub'] = TA.vfsHelpers.file(fakePub, 'rw-r--r--');
+      return ok(
+        'Generando par de claves rsa público/privado.\nTu identificación se ha guardado en /home/jugador/.ssh/id_rsa\nTu clave pública se ha guardado en /home/jugador/.ssh/id_rsa.pub'
+      );
+    },
+
     df(args, stdin, ctx) {
       return ok([
         'Sist. de ficheros   Tamaño  Usado  Disp.  Uso%  Montado en',
@@ -1329,6 +1414,11 @@ window.TA = window.TA || {};
         usermod: 'Modifica un usuario: usermod -aG <grupo> <usuario> lo añade a un grupo (requiere sudo).',
         passwd: 'Define o cambia la contraseña de un usuario.',
         git: 'Control de versiones: git init, git status, git add, git commit -m "...", git log.',
+        dig: 'Resuelve un nombre de dominio a su dirección IP.',
+        nslookup: 'Alternativa a dig para consultar DNS.',
+        ip: 'Configuración de red: ip addr (o ip a) muestra interfaces, ip route muestra la tabla de rutas.',
+        ufw: 'Cortafuegos: ufw status, ufw enable/disable, ufw allow/deny <puerto> (requiere sudo salvo status).',
+        'ssh-keygen': 'Genera un par de claves SSH (privada y pública) en ~/.ssh/.',
       };
       if (args[0] && catalog[args[0]]) return ok(`${args[0]}: ${catalog[args[0]]}`);
       return ok(Object.entries(catalog).map(([k, v]) => `${k.padEnd(8)} ${v}`).join('\n'));

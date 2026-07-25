@@ -6,7 +6,9 @@ de archivos virtual, permisos reales (lectura/escritura/ejecución, propietarios
 `sudo`), procesos, variables de entorno y red. Cada nivel plantea un objetivo y se
 completa automáticamente al ejecutar los comandos correctos.
 
-32 niveles en tres bloques:
+37 niveles (0-36) en cinco bloques:
+- **Nivel 0 (introducción):** qué es una terminal, qué es Linux, cómo leer el prompt
+  — sin dar nada por sabido, para quien nunca ha visto una terminal.
 - **Niveles 1-10 (fundamentos):** moverte por directorios, crear/leer archivos, copiar,
   `grep`/`find`, `chmod`, tuberías y redirección.
 - **Niveles 11-24 (profesional):** procesos (`ps`, `top`, `kill`, `jobs`, `nohup`),
@@ -19,6 +21,8 @@ completa automáticamente al ejecutar los comandos correctos.
   usuarios y grupos (`useradd`, `groupadd`, `usermod`, `passwd`), y control de
   versiones con `git` (`init`/`add`/`commit`/`status`/`log`) sobre el propio sistema
   de archivos virtual.
+- **Niveles 33-36 (redes avanzadas y SSH):** cortafuegos (`ufw`), DNS (`dig`/`nslookup`),
+  rutas (`ip addr`/`ip route`), y autenticación por clave pública (`ssh-keygen`).
 
 No requiere instalación ni dependencias: es HTML/CSS/JS sin build.
 
@@ -43,7 +47,7 @@ El progreso se guarda en el `localStorage` del navegador.
   (`|`), redirección (`>`, `>>`), variables de entorno (comillas simples vs dobles,
   parámetros posicionales), `sudo`, segundo plano (`&`, `nohup`), y un intérprete real
   de bloques `for`/`if` para scripts.
-- `src/levels.js` — definición de los 32 niveles (historia, objetivo, pistas y
+- `src/levels.js` — definición de los 37 niveles (historia, objetivo, pistas y
   validación).
 - `src/game.js` — controlador de la interfaz: terminal, progreso, pistas, barra táctil.
 - `manifest.json` / `service-worker.js` / `icons/` — PWA instalable en Android.
