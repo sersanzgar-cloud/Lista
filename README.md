@@ -3,6 +3,9 @@
 Sube un PDF o un TXT y Lista te lo lee en voz alta, frase a frase, guardando
 siempre por dónde te has quedado para poder continuar más tarde.
 
+**App en vivo:** https://sersanzgar-cloud.github.io/Lista/ (requiere activar
+GitHub Pages una vez, ver [Publicar en GitHub Pages](#publicar-en-github-pages)).
+
 ## Funcionalidad
 
 - Subida de libros en **PDF** o **TXT** (el texto se extrae en el propio navegador con `pdf.js`).
@@ -51,6 +54,23 @@ dispositivos automáticamente.
 Estas dos claves son públicas por diseño (se usan desde el navegador); la
 seguridad la da la Row Level Security del paso 2, no el secreto de la
 clave.
+
+## Publicar en GitHub Pages
+
+El repositorio incluye un workflow (`.github/workflows/deploy-pages.yml`)
+que compila la app y la publica en GitHub Pages automáticamente en cada
+push a `claude/mobile-game-qixyc3` (la rama por defecto de este
+repositorio — no tiene ninguna rama llamada `main`). Solo falta un paso
+manual, una única vez:
+
+1. En GitHub, ve a **Settings → Pages** del repositorio.
+2. En **Source**, selecciona **GitHub Actions** (en vez de "Deploy from a
+   branch").
+
+Con eso, cada push a la rama por defecto compilará y publicará la app en
+`https://sersanzgar-cloud.github.io/Lista/`. También puedes lanzar el
+despliegue a mano desde la pestaña **Actions → Deploy to GitHub Pages →
+Run workflow**.
 
 ## Sobre la voz
 
